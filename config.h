@@ -37,7 +37,7 @@
 
 /****  New Testfunctions  ****/ 
 /*======================================================*/
-#define STAY_IN_MISSION    // Continue Mission even in Failsafe
+//#define STAY_IN_MISSION    // Continue Mission even in Failsafe
 
 /****  SERVO_FIELD_TRIM  ****
 Center servos with trims.
@@ -46,7 +46,7 @@ Calib gyro with sticks release sticks quickly
 Make sure Elevator stay in Max position.
 Remove TX trims when servos return to center again...
 Ready to fly...*/
-#define SERVO_FIELD_TRIM
+//#define SERVO_FIELD_TRIM
 
 /*======================================================*/
 
@@ -88,7 +88,7 @@ Ready to fly...*/
     //#define OCTOX8
     //#define OCTOFLATP
     //#define OCTOFLATX
-    //#define FLYING_WING
+    #define FLYING_WING
     //#define VTAIL4
     //#define AIRPLANE
     //#define SINGLECOPTER
@@ -105,16 +105,16 @@ Ready to fly...*/
     //#define MINTHROTTLE 1120 // for Super Simple ESCs 10A
     //#define MINTHROTTLE 1064 // special ESC (simonk)
     //#define MINTHROTTLE 1050 // for brushed ESCs like ladybird
-    #define MINTHROTTLE 1150 // (*) (**)
+    #define MINTHROTTLE 950 // (*) (**)
 
   /****************************    Motor maxthrottle    *******************************/
     /* this is the maximum value for the ESCs at full power, this value can be increased up to 2000 */
-    #define MAXTHROTTLE 1850
+    #define MAXTHROTTLE 2000
 
   /****************************    Mincommand          *******************************/
     /* this is the value for the ESCs when they are not armed
        in some cases, this value must be lowered down to 900 for some specific ESCs, otherwise they failed to initiate */
-    #define MINCOMMAND  1000
+    #define MINCOMMAND  950
 
   /**********************************  I2C speed for old WMP config (useless config for other sensors)  *************/
     #define I2C_SPEED 100000L     //100kHz normal mode, this value must be used for a genuine WMP
@@ -217,7 +217,7 @@ Ready to fly...*/
       //#define ITG3200
       //#define MPU3050
       //#define L3G4200D
-      //#define MPU6050       //combo + ACC
+      #define MPU6050       //combo + ACC
       //#define LSM330        //combo + ACC
       
       /* I2C accelerometer */
@@ -231,12 +231,12 @@ Ready to fly...*/
       //#define MMA8451Q
 
       /* I2C barometer */
-      //#define BMP085
+      #define BMP085
       //#define MS561101BA
 
       /* I2C magnetometer */
       //#define HMC5843
-      //#define HMC5883
+      #define HMC5883
       //#define AK8975
       //#define MAG3110
 
@@ -250,6 +250,11 @@ Ready to fly...*/
       //#define ADCACC
 
       /* enforce your individual sensor orientation - even overrides board specific defaults */
+      
+      #define FORCE_ACC_ORIENTATION(X, Y, Z)  {imu.accADC[ROLL]  =  X; imu.accADC[PITCH]  = Y; imu.accADC[YAW]  = Z;}
+      #define FORCE_GYRO_ORIENTATION(X, Y, Z) {imu.gyroADC[ROLL] = -Y; imu.gyroADC[PITCH] =  X; imu.gyroADC[YAW] = -Z;}
+      #define FORCE_MAG_ORIENTATION(X, Y, Z)  {imu.magADC[ROLL]  =  X; imu.magADC[PITCH]  =  Y; imu.magADC[YAW]  = -Z;}
+      
       //#define FORCE_ACC_ORIENTATION(X, Y, Z)  {imu.accADC[ROLL]  =  Y; imu.accADC[PITCH]  = -X; imu.accADC[YAW]  = Z;}
       //#define FORCE_GYRO_ORIENTATION(X, Y, Z) {imu.gyroADC[ROLL] = -Y; imu.gyroADC[PITCH] =  X; imu.gyroADC[YAW] = Z;}
       //#define FORCE_MAG_ORIENTATION(X, Y, Z)  {imu.magADC[ROLL]  =  X; imu.magADC[PITCH]  =  Y; imu.magADC[YAW]  = Z;}
@@ -479,7 +484,7 @@ At this moment you can use this function only with WinGUI 2.3 release. MultiWiiC
     /*********************************    Aux 2 Pin     ***********************************/
       /* possibility to use PIN8 or PIN12 as the AUX2 RC input (only one, not both)
          it deactivates in this case the POWER PIN (pin 12) or the BUZZER PIN (pin 8) */
-      //#define RCAUXPIN8
+      #define RCAUXPIN8
       //#define RCAUXPIN12
 
 
@@ -580,14 +585,14 @@ At this moment you can use this function only with WinGUI 2.3 release. MultiWiiC
       //#define GYRO_LPF_98HZ
       //#define GYRO_LPF_42HZ
       //#define GYRO_LPF_20HZ
-      //#define GYRO_LPF_10HZ
+      #define GYRO_LPF_10HZ
       //#define GYRO_LPF_5HZ       // Use this only in extreme cases, rather change motors and/or props -- setting not available on ITG3200
 
     /******                Gyro smoothing    **********************************/
       /* GYRO_SMOOTHING. In case you cannot reduce vibrations _and_ _after_ you have tried the low pass filter options, you
          may try this gyro smoothing via averaging. Not suitable for multicopters!
          Good results for helicopter, airplanes and flying wings (foamies) with lots of vibrations.*/
-      //#define GYRO_SMOOTHING {20, 20, 3}    // (*) separate averaging ranges for roll, pitch, yaw
+      #define GYRO_SMOOTHING {20, 20, 3}    // (*) separate averaging ranges for roll, pitch, yaw
 
     /************************    Moving Average Gyros    **********************************/
       //#define MMGYRO 10                      // (*) Active Moving Average Function for Gyros
@@ -653,12 +658,12 @@ At this moment you can use this function only with WinGUI 2.3 release. MultiWiiC
        PITCH, ROLL and YAW is centered and THROTTLE is set to FAILSAFE_THROTTLE value. You must set this value to descending about 1m/s or so
        for best results. This value is depended from your configuration, AUW and some other params.  Next, after FAILSAFE_OFF_DELAY the copter is disarmed, 
        and motors is stopped. If RC pulse coming back before reached FAILSAFE_OFF_DELAY time, after the small quard time the RC control is returned to normal. */
-    //#define FAILSAFE                                // uncomment  to activate the failsafe function
-    #define FAILSAFE_DELAY     10                     // Guard time for failsafe activation after signal lost. 1 step = 0.1sec - 1sec in example
-    #define FAILSAFE_OFF_DELAY 200                    // Time for Landing before motors stop in 0.1sec. 1 step = 0.1sec - 20sec in example
-    #define FAILSAFE_THROTTLE  (MINTHROTTLE + 200)    // (*) Throttle level used for landing - may be relative to MINTHROTTLE - as in this case
+    #define FAILSAFE                                // uncomment  to activate the failsafe function
+    #define FAILSAFE_DELAY     30                     // Guard time for failsafe activation after signal lost. 1 step = 0.1sec - 1sec in example
+    #define FAILSAFE_OFF_DELAY 150                    // Time for Landing before motors stop in 0.1sec. 1 step = 0.1sec - 20sec in example
+    #define FAILSAFE_THROTTLE  (MINTHROTTLE + 0)    // (*) Throttle level used for landing - may be relative to MINTHROTTLE - as in this case
     
-    #define FAILSAFE_DETECT_TRESHOLD  985
+    #define FAILSAFE_DETECT_TRESHOLD  930
 
 
   /*****************                DFRobot LED RING    *********************************/
@@ -749,7 +754,7 @@ At this moment you can use this function only with WinGUI 2.3 release. MultiWiiC
        You have to use at least I2CGpsNav code r33 */
     /* all functionnalities allowed by SERIAL_GPS are now available for I2C_GPS: all relevant navigation computations are gathered in the main FC */
 
-    //#define I2C_GPS
+    #define I2C_GPS
 
     // If your I2C GPS board has Sonar support enabled
     //#define I2C_GPS_SONAR
@@ -758,7 +763,7 @@ At this moment you can use this function only with WinGUI 2.3 release. MultiWiiC
       - No GPS FIX -> LED blink at speed of incoming GPS frames
       - Fix and sat no. bellow 5 -> LED off
       - Fix and sat no. >= 5 -> LED blinks, one blink for 5 sat, two blinks for 6 sat, three for 7 ... */
-    #define GPS_LED_INDICATOR
+    //#define GPS_LED_INDICATOR
 
    //Enables the MSP_WP command set , which is used by WinGUI for displaying an setting up navigation
    //#define USE_MSP_WP
@@ -779,7 +784,7 @@ At this moment you can use this function only with WinGUI 2.3 release. MultiWiiC
 Convert the degree+minutes into decimal degree by ==> degree+minutes*(1/60)
 Note the sign on declination it could be negative or positive (WEST or EAST)
 Also note, that maqgnetic declination changes with time, so recheck your value every 3-6 months */
-#define MAG_DECLINATION  4.02f   //(**)
+#define MAG_DECLINATION  4.34f   //(**)
 
 // Adds a forward predictive filterig to compensate gps lag. Code based on Jason Short's lead filter implementation
 #define GPS_LEAD_FILTER               //(**)
@@ -796,12 +801,12 @@ Also note, that maqgnetic declination changes with time, so recheck your value e
 #define SAFE_WP_DISTANCE           500      //(**)
 
 //Maximum allowable navigation altitude (in meters) automatic altitude control will not go above this height
-#define MAX_NAV_ALTITUDE           100     //(**)
+#define MAX_NAV_ALTITUDE           1000     //(**)
 
 // minimum speed when approach waypoint
-#define NAV_SPEED_MIN              100    // cm/sec //(**)
+#define NAV_SPEED_MIN              800    // cm/sec //(**)
 // maximum speed to reach between waypoints
-#define NAV_SPEED_MAX              400    // cm/sec //(**)
+#define NAV_SPEED_MAX              1400    // cm/sec //(**)
 // Slow down to zero when reaching waypoint (same as NAV_SPEED_MIN = 0)
 #define NAV_SLOW_NAV               0      //(**)
 // Weight factor of the crosstrack error in navigation calculations (do not touch)
@@ -822,7 +827,7 @@ Also note, that maqgnetic declination changes with time, so recheck your value e
 
 //If FENCE DISTANCE is larger than 0 then copter will switch to RTH when it farther from home
 //than the defined number in meters
-#define FENCE_DISTANCE      600
+#define FENCE_DISTANCE      1000
 
 //This governs the descent speed during landing. 100 is equals approc 50cm/sec
 #define LAND_SPEED          100

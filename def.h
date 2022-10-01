@@ -1798,12 +1798,12 @@
 #if defined(SLIM_WING)
   #if !defined(MEGA) || defined (TESTBED) // Only for small FC
     // BARO
-    #undef BMP085 
+    //#undef BMP085 
     #undef MS561101BA
   
     //MAG
     #undef HMC5843
-    #undef HMC5883
+    //#undef HMC5883
     #undef AK8975
     #undef MAG3110
     #undef MPU6050_EN_I2C_BYPASS  
