@@ -1,0 +1,30 @@
+
+*******************************************
+Control Cruise speed with throttle stick.
+    Full thro = Full Auto.
+    Low Thro = Motors stopped or minthrottle.
+    Between sets cruise throttle.
+    
+*******************************************
+Dynamic WP radius depending on speed.
+
+*******************************************
+New Althold Algoritm.
+Base Alt error on distance to WP.
+    Only if Horizon is selected.
+    ANGLE uses original code.
+
+*******************************************
+Added testfunction to limit throttle for landing in mission.
+If Alt is set to zero set Idle as cruise throtle.
+
+*******************************************
+Test to Push MSP Via GPS_Serial
+    For telemetry or OSD on 328
+
+*******************************************
+Cruise mode.
+  Fly to a GPS hold automatilcly set xx merters away
+  Uses safe WP distance
+
+*******************************************

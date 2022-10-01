@@ -1,3 +1,19 @@
+/*
+
+*******************************************
+This is a developer branch by PatrikE.
+Development of FixedWing RTH.
+Version 2015-04-31
+
+All settings for FixedWing RTH is in GPS.h
+General settings can be done using any Gui compatible to MWii V2.4
+For Waypoints use WinGui or Eizo EZ-Gui for Android.
+------------------------------
+
+Setup Instructions for GPS
+http://fotoflygarn.blogspot.com/2014/04/multiwii-gps-airplane.html
+
+*******************************************
 
 /*
  * Welcome to MultiWii.

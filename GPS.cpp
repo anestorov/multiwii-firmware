@@ -27,6 +27,18 @@ static void GPS_update_crosstrack(void);
 int32_t wrap_36000(int32_t ang);
 
 
+void clearNav(void);
+#if defined(FIXEDWING)
+  float NaverrorI,AlterrorI;
+  static int16_t lastAltDiff,lastNavDiff,SpeedBoost;
+  static int16_t AltHist[GPS_UPD_HZ]; // shift register
+  static int16_t NavDif[GPS_UPD_HZ];  // shift register
+  
+// This is the angle from the copter to the "next_WP" location
+// Reinseerted for FIXEDWING from V2.3
+  static int32_t nav_bearing;
+#endif
+
 // Leadig filter - TODO: rewrite to normal C instead of C++
 
 // Set up gps lag
@@ -78,6 +90,7 @@ typedef struct PID_PARAM_ {
 PID_PARAM posholdPID_PARAM;
 PID_PARAM poshold_ratePID_PARAM;
 PID_PARAM navPID_PARAM;
+PID_PARAM altPID_PARAM;
 
 typedef struct PID_ {
   float   integrator; // integrator value
@@ -237,10 +250,10 @@ uint8_t GPS_Compute(void) {
     if ((GPS_conf.fence > 0) && (GPS_conf.fence < GPS_distanceToHome) && (f.GPS_mode != GPS_MODE_RTH) ) {
       init_RTH();
     }
-
+    
     //calculate the current velocity based on gps coordinates continously to get a valid speed at the moment when we start navigating
-    GPS_calc_velocity();        
-
+    GPS_calc_velocity();     
+    
     //Navigation state engine
     if (f.GPS_mode != GPS_MODE_NONE) {   //ok we are navigating ###0002 
       //do gps nav calculations here, these are common for nav and poshold  
@@ -263,62 +276,82 @@ uint8_t GPS_Compute(void) {
       }
 
       int16_t speed = 0;                   //Desired navigation speed
-
+      uint16_t dyn_wp_radius = GPS_conf.wp_radius;
+      #if defined(FIXEDWING) // Adjust radius based on speed
+		dyn_wp_radius = GPS_speed / GPS_UPD_HZ;
+        dyn_wp_radius = max( dyn_wp_radius , GPS_conf.wp_radius );
+      #endif
       switch(NAV_state)                    //Navigation state machine
         {
         case NAV_STATE_NONE:               //Just for clarity, do nothing when nav_state is none
           break;
+        #if !defined (SLIM_WING)   // Save space for small proc. PatrikE
+        /***************************************************************/
+          case NAV_STATE_LAND_START:
+            GPS_calc_poshold();              //Land in position hold
+            land_settle_timer = millis();
+            NAV_state = NAV_STATE_LAND_SETTLE;
+            break;
 
-        case NAV_STATE_LAND_START:
-          GPS_calc_poshold();              //Land in position hold
-          land_settle_timer = millis();
-          NAV_state = NAV_STATE_LAND_SETTLE;
-          break;
+          case NAV_STATE_LAND_SETTLE:
+            GPS_calc_poshold();
+            if (millis()-land_settle_timer > 5000)
+              NAV_state = NAV_STATE_LAND_START_DESCENT;
+            break;
 
-        case NAV_STATE_LAND_SETTLE:
-          GPS_calc_poshold();
-          if (millis()-land_settle_timer > 5000)
-            NAV_state = NAV_STATE_LAND_START_DESCENT;
-          break;
-
-        case NAV_STATE_LAND_START_DESCENT:
-          GPS_calc_poshold();                //Land in position hold
-          f.THROTTLE_IGNORED = 1;            //Ignore Throtte stick input
-          f.GPS_BARO_MODE    = 1;            //Take control of BARO mode
-          land_detect = 0;                   //Reset land detector
-          f.LAND_COMPLETED = 0;
-          f.LAND_IN_PROGRESS = 1;            // Flag land process
-          NAV_state = NAV_STATE_LAND_IN_PROGRESS;
-          break;
-
-        case NAV_STATE_LAND_IN_PROGRESS:
-          GPS_calc_poshold();
-          check_land();  //Call land detector
-          if (f.LAND_COMPLETED) {
-            nav_timer_stop = millis() + 5000;
-            NAV_state = NAV_STATE_LANDED;
-          }
-          break;
-
-        case NAV_STATE_LANDED:
-          // Disarm if THROTTLE stick is at minimum or 5sec past after land detected
-          if (rcData[THROTTLE]<MINCHECK || nav_timer_stop <= millis()) { //Throttle at minimum or 5sec passed.
-            go_disarm();
-            f.OK_TO_ARM = 0;                //Prevent rearming
-            NAV_state = NAV_STATE_NONE;     //Disable position holding.... prevent flippover
-            f.GPS_BARO_MODE = 0;
+          case NAV_STATE_LAND_START_DESCENT:
+            GPS_calc_poshold();                //Land in position hold
+            f.THROTTLE_IGNORED = 1;            //Ignore Throtte stick input
+            f.GPS_BARO_MODE    = 1;            //Take control of BARO mode
+            land_detect = 0;                   //Reset land detector
             f.LAND_COMPLETED = 0;
-            f.LAND_IN_PROGRESS = 0;
-            land_detect = 0;
-            f.THROTTLE_IGNORED = 0;
-            GPS_reset_nav();
+            f.LAND_IN_PROGRESS = 1;            // Flag land process
+            NAV_state = NAV_STATE_LAND_IN_PROGRESS;
+            break;
+
+          case NAV_STATE_LAND_IN_PROGRESS:
+            GPS_calc_poshold();
+            check_land();  //Call land detector
+            if (f.LAND_COMPLETED) {
+              nav_timer_stop = millis() + 5000;
+              NAV_state = NAV_STATE_LANDED;
+            }
+            break;
+
+          case NAV_STATE_LANDED:
+            // Disarm if THROTTLE stick is at minimum or 5sec past after land detected
+            if (rcData[THROTTLE]<MINCHECK || nav_timer_stop <= millis()) { //Throttle at minimum or 5sec passed.
+              go_disarm();
+              f.OK_TO_ARM = 0;                //Prevent rearming
+              NAV_state = NAV_STATE_NONE;     //Disable position holding.... prevent flippover
+              f.GPS_BARO_MODE = 0;
+              f.LAND_COMPLETED = 0;
+              f.LAND_IN_PROGRESS = 0;
+              land_detect = 0;
+              f.THROTTLE_IGNORED = 0;
+              GPS_reset_nav();
+            }
+            break;
+        case NAV_STATE_RTH_START:
+          if ((alt_change_flag == REACHED_ALT) || (!GPS_conf.wait_for_rth_alt)) {             //Wait until we reach RTH altitude
+            GPS_set_next_wp(&GPS_home[LAT],&GPS_home[LON], &GPS_coord[LAT], &GPS_coord[LON]); //If we reached then change mode and start RTH
+            NAV_state = NAV_STATE_RTH_ENROUTE;
+            NAV_error = NAV_ERROR_NONE;
+          } else {
+            GPS_calc_poshold();                                                               //hold position till we reach RTH alt
+            NAV_error = NAV_ERROR_WAIT_FOR_RTH_ALT;
           }
           break;
 
+#endif // End of Not for FixedWing
+/***************************************************************/
         case NAV_STATE_HOLD_INFINIT:        //Constant position hold, no timer. Only an rcOption change can exit from this
+#ifndef SLIM_WING
           GPS_calc_poshold();
+#endif
           break;
-
+#if !defined (SLIM_WING)   // Save space for small proc. PatrikE
+/***************************************************************/
         case NAV_STATE_HOLD_TIMED:
           if (nav_timer_stop == 0) {                         //We are start a timed poshold
             nav_timer_stop = millis() + 1000*nav_hold_time;  //Set when we will continue
@@ -331,34 +364,25 @@ uint8_t GPS_Compute(void) {
           GPS_calc_poshold();                                //BTW hold position till next command
           break;
 
-        case NAV_STATE_RTH_START:
-          if ((alt_change_flag == REACHED_ALT) || (!GPS_conf.wait_for_rth_alt)) {             //Wait until we reach RTH altitude
-            GPS_set_next_wp(&GPS_home[LAT],&GPS_home[LON], &GPS_coord[LAT], &GPS_coord[LON]); //If we reached then change mode and start RTH
-            NAV_state = NAV_STATE_RTH_ENROUTE;
-            NAV_error = NAV_ERROR_NONE;
-          } else {
-            GPS_calc_poshold();                                                               //hold position till we reach RTH alt
-            NAV_error = NAV_ERROR_WAIT_FOR_RTH_ALT;
-          }
-          break;
-
         case NAV_STATE_RTH_ENROUTE:                                                  //Doing RTH navigation
           speed = GPS_calc_desired_speed(GPS_conf.nav_speed_max, GPS_conf.slow_nav); 
           GPS_calc_nav_rate(speed);
           GPS_adjust_heading();
-          if ((wp_distance <= GPS_conf.wp_radius) || check_missed_wp()) {            //if yes switch to poshold mode
+          if ((wp_distance <= dyn_wp_radius) || check_missed_wp()) {            //if yes switch to poshold mode
             if (mission_step.parameter1 == 0) NAV_state = NAV_STATE_HOLD_INFINIT;
             else NAV_state = NAV_STATE_LAND_START;                                   // if parameter 1 in RTH step is non 0 then land at home
             if (GPS_conf.nav_rth_takeoff_heading) { magHold = nav_takeoff_bearing; }
           } 
           break;
-
-        case NAV_STATE_WP_ENROUTE:
+#endif
+		case NAV_STATE_WP_ENROUTE:
+#if !defined (SLIM_WING)
           speed = GPS_calc_desired_speed(GPS_conf.nav_speed_max, GPS_conf.slow_nav); 
           GPS_calc_nav_rate(speed);
           GPS_adjust_heading();
-
-          if ((wp_distance <= GPS_conf.wp_radius) || check_missed_wp()) {               //This decides what happen when we reached the WP coordinates 
+#endif
+          //if ((wp_distance <= GPS_conf.wp_radius) || check_missed_wp()) {
+          if ((wp_distance <= dyn_wp_radius) || check_missed_wp()) {                    //This decides what happen when we reached the WP coordinates 
             if (mission_step.action == MISSION_LAND) {                                  //Autoland
               NAV_state = NAV_STATE_LAND_START;                                         //Start landing
               set_new_altitude(alt.EstAlt);                                             //Stop any altitude changes
@@ -378,6 +402,10 @@ uint8_t GPS_Compute(void) {
           }
           break;
 
+#if !defined (SLIM_WING)   // Save space for small proc. PatrikE
+/***************************************************************/
+// NAV_STATE_DO_JUMP: if not needed
+#endif 
         case NAV_STATE_DO_JUMP:
           if (jump_times < 0) {                                  //Jump unconditionally (supposed to be -1) -10 should not be here
             next_step = mission_step.parameter1;
@@ -398,7 +426,6 @@ uint8_t GPS_Compute(void) {
             jump_times--;
           }
           break;
-
         case NAV_STATE_PROCESS_NEXT:                             //Processing next mission step
           NAV_error = NAV_ERROR_NONE;
           if (!recallWP(next_step)) { 
@@ -439,6 +466,13 @@ uint8_t GPS_Compute(void) {
                 else //Error situation, invalid jump target
                   abort_mission(NAV_ERROR_INVALID_JUMP);
                 break;
+/***************************************************************/
+#if !defined (SLIM_WING)   // Save space for small proc. PatrikE
+              case MISSION_SET_POI:
+                GPS_poi[LAT] = mission_step.pos[LAT];
+                GPS_poi[LON] = mission_step.pos[LON];
+                f.GPS_head_set = 1;
+                break;
               case MISSION_SET_HEADING:
                 GPS_poi[LAT] = 0; GPS_poi[LON] = 0; // zeroing this out clears the possible pervious set_poi
                 if (mission_step.parameter1 < 0) f.GPS_head_set = 0;
@@ -447,11 +481,7 @@ uint8_t GPS_Compute(void) {
                   GPS_directionToPoi = mission_step.parameter1;
                 } 
                 break;
-              case MISSION_SET_POI:
-                GPS_poi[LAT] = mission_step.pos[LAT];
-                GPS_poi[LON] = mission_step.pos[LON];
-                f.GPS_head_set = 1;
-                break;
+#endif
               default:                                  //if we got an unknown action code abort mission and hold position
                 abort_mission(NAV_ERROR_INVALID_DATA);
                 break;
@@ -467,11 +497,11 @@ uint8_t GPS_Compute(void) {
 
 // Abort current mission with the given error code (switch to poshold_infinit)
 void abort_mission(unsigned char error_code) {
-  GPS_set_next_wp(&GPS_coord[LAT], &GPS_coord[LON],&GPS_coord[LAT], &GPS_coord[LON]);
+  GPS_set_next_wp,(&GPS_coord[LAT], &GPS_coord[LON],&GPS_coord[LAT], &GPS_coord[LON]);
   NAV_error = error_code;
   NAV_state = NAV_STATE_HOLD_INFINIT;
 }
-
+#if !defined (SLIM_WING)
 //Adjusting heading according to settings - MAG mode must be enabled
 void GPS_adjust_heading() {
   //TODO: Add slow windup for large heading change
@@ -494,10 +524,13 @@ void GPS_adjust_heading() {
     }
   }
 }
-
+#endif
 #define LAND_DETECT_THRESHOLD 40      //Counts of land situation
 #define BAROPIDMIN           -180     //BaroPID reach this if we landed.....
 
+
+#if !defined (SLIM_WING)   // Save space for small proc. PatrikE
+/***************************************************************/
 //Check if we landed or not
 void check_land() {
   // detect whether we have landed by watching for low climb rate and throttle control
@@ -518,6 +551,7 @@ void check_land() {
     }
   }
 }
+#endif
 
 int32_t get_altitude_error() {
   return alt_to_hold - alt.EstAlt;
@@ -534,10 +568,10 @@ void force_new_altitude(int32_t _new_alt) {
 }
 
 void set_new_altitude(int32_t _new_alt) {
-  //Limit maximum altitude command
+  //Limit maximum altitude command 
   if(_new_alt > GPS_conf.nav_max_altitude*100) _new_alt = GPS_conf.nav_max_altitude * 100;
-  if(_new_alt == alt.EstAlt){
-    force_new_altitude(_new_alt);
+  if(_new_alt == alt.EstAlt || f.Fixed_Wing_Nav){
+    force_new_altitude(_new_alt);    
     return;
   }
   // We start at the current location altitude and gradually change alt
@@ -637,15 +671,29 @@ void GPS_set_next_wp(int32_t* lat_to, int32_t* lon_to, int32_t* lat_from, int32_
 
   GPS_FROM[LAT] = *lat_from;
   GPS_FROM[LON] = *lon_from;
-
   GPS_calc_longitude_scaling(*lat_to);
+
+#ifdef FIXEDWING 
+// TODO build a separate function to call.
+  if (f.CRUISE_MODE){ // PatrikE CruiseMode version
+    #define GEO_SKALEFACT    89.832f  // Scale to match meters  
+    int32_t hh = att.heading;
+    if (hh >180) hh -=360 ;
+    
+    float scaler=( GEO_SKALEFACT/GPS_scaleLonDown) * GPS_conf.safe_wp_distance;
+    float wp_lat_diff = cos(hh*0.0174532925f) * GPS_scaleLonDown;
+    float wp_lon_diff = sin(hh*0.0174532925f);
+    GPS_WP[LAT] +=wp_lat_diff*scaler;
+    GPS_WP[LON] +=wp_lon_diff*scaler;
+  }
+#endif
 
   GPS_bearing(&GPS_FROM[LAT],&GPS_FROM[LON],&GPS_WP[LAT],&GPS_WP[LON],&target_bearing);
   GPS_distance_cm(&GPS_FROM[LAT],&GPS_FROM[LON],&GPS_WP[LAT],&GPS_WP[LON],&wp_distance);
   GPS_calc_location_error(&GPS_WP[LAT],&GPS_WP[LON],&GPS_FROM[LAT],&GPS_FROM[LON]);
   waypoint_speed_gov = GPS_conf.nav_speed_min;
   original_target_bearing = target_bearing;
-
+  clearNav();
 }
 
 ////////////////////////////////////////////////////////////////////////////////////
@@ -730,9 +778,11 @@ static void GPS_calc_location_error( int32_t* target_lat, int32_t* target_lng, i
   error[LAT] = *target_lat - *gps_lat; // Y Error
 }
 
+#if !defined (SLIM_WING)   // Save space for small proc. PatrikE
+/***************************************************************/
 ////////////////////////////////////////////////////////////////////////////////////
 // Calculate nav_lat and nav_lon from the x and y error and the speed
-//
+
 // TODO: check that the poshold target speed constraint can be increased for snappier poshold lock
 static void GPS_calc_poshold(void) {
   int32_t d;
@@ -761,7 +811,6 @@ static void GPS_calc_poshold(void) {
     navPID[axis].integrator = poshold_ratePID[axis].integrator;
   }
 }
-
 ////////////////////////////////////////////////////////////////////////////////////
 // Calculate the desired nav_lat and nav_lon for distance flying such as RTH and WP
 //
@@ -797,12 +846,23 @@ static void GPS_calc_nav_rate( uint16_t max_speed) {
   }
 }
 
+#endif
 static void GPS_update_crosstrack(void) {
   // Crosstrack Error
   // ----------------
   // If we are too far off or too close we don't do track following
-  float temp = (target_bearing - original_target_bearing) * RADX100;
-  crosstrack_error = sin(temp) * wp_distance; // Meters we are off track line
+  float temp = (target_bearing - original_target_bearing) * RADX100;  
+   crosstrack_error = sin(temp) * wp_distance; // Meters we are off track line
+  #if defined(FIXEDWING)
+    if (abs(wrap_18000(target_bearing - original_target_bearing)) < 4500) {  // If we are too far off or too close we don't do track following
+      crosstrack_error = sin(temp) * (wp_distance * GPS_conf.crosstrack_gain / 100.0 );//CROSSTRACK_GAIN = 1);  // Meters we are off track line
+      nav_bearing = target_bearing + constrain(crosstrack_error, -3000, 3000);
+      nav_bearing = wrap_36000(nav_bearing);
+    }else{
+      nav_bearing = target_bearing;
+    } 
+  #endif
+   
 }
 
 ////////////////////////////////////////////////////////////////////////////////////
@@ -916,16 +976,23 @@ uint8_t hex_c(uint8_t n) {    // convert '0'..'9','A'..'F' to 0..15
 void init_RTH() {
   f.GPS_mode = GPS_MODE_RTH;           // Set GPS_mode to RTH
   f.GPS_BARO_MODE = true;
-  GPS_hold[LAT] = GPS_coord[LAT];      //All RTH starts with a poshold 
-  GPS_hold[LON] = GPS_coord[LON];      //This allows to raise to rth altitude
-  GPS_set_next_wp(&GPS_hold[LAT],&GPS_hold[LON], &GPS_hold[LAT], &GPS_hold[LON]);
+  #ifdef FIXEDWING
+    GPS_hold[LAT] = GPS_home[LAT];      //Fixedwing Handles routine RTH
+    GPS_hold[LON] = GPS_home[LON];
+    f.CLIMBOUT_FW=1;
+  #else
+    GPS_hold[LAT] = GPS_coord[LAT];      //All RTH starts with a poshold 
+    GPS_hold[LON] = GPS_coord[LON];      //This allows to raise to rth altitude
+  #endif  
+    if (GPS_conf.rth_altitude == 0) set_new_altitude(alt.EstAlt);     //Return at actual altitude
+    else {                                                            // RTH altitude is defined, but we use it only if we are below it
+      if (alt.EstAlt < GPS_conf.rth_altitude * 100) 
+        set_new_altitude(GPS_conf.rth_altitude * 100);
+      else set_new_altitude(alt.EstAlt);
+    }
+  //#endif
   NAV_paused_at = 0;
-  if (GPS_conf.rth_altitude == 0) set_new_altitude(alt.EstAlt);     //Return at actual altitude
-  else {                                                            // RTH altitude is defined, but we use it only if we are below it
-    if (alt.EstAlt < GPS_conf.rth_altitude * 100) 
-      set_new_altitude(GPS_conf.rth_altitude * 100);
-    else set_new_altitude(alt.EstAlt);
-  }
+  GPS_set_next_wp(&GPS_hold[LAT],&GPS_hold[LON], &GPS_hold[LAT], &GPS_hold[LON]);
   f.GPS_head_set = 0;                                               //Allow the RTH ti handle heading
   NAV_state = NAV_STATE_RTH_START;                                  //NAV engine status is Starting RTH.
 }
@@ -936,7 +1003,7 @@ void GPS_reset_home_position(void) {
     GPS_home[LON] = GPS_coord[LON];
     GPS_calc_longitude_scaling(GPS_coord[LAT]);    //need an initial value for distance and bearing calc
     nav_takeoff_bearing = att.heading;             //save takeoff heading
-    //TODO: Set ground altitude
+    GPS_home[ALT] = GPS_altitude;                  //TODO: Set ground altitude
     f.GPS_FIX_HOME = 1;
   }
 }
@@ -959,6 +1026,17 @@ void GPS_reset_nav(void) {
     GPS_poi[LAT] = 0; GPS_poi[LON] = 0;
     f.GPS_head_set = 0;
   }
+  clearNav();
+}
+
+  // Reset nav
+  void clearNav(void){
+  #if defined(FIXEDWING)
+    NaverrorI=0;
+    AlterrorI=0;
+    lastAltDiff=0;lastNavDiff=0;SpeedBoost=0;
+    for(uint8_t i=0;i <GPS_UPD_HZ;i++){ AltHist[i] = 0; NavDif[i] =0;};
+  #endif
 }
 
 //Get the relevant P I D values and set the PID controllers 
@@ -976,6 +1054,13 @@ void GPS_set_pids(void) {
   navPID_PARAM.kI   = (float)conf.pid[PIDNAVR].I8/100.0;
   navPID_PARAM.kD   = (float)conf.pid[PIDNAVR].D8/1000.0;
   navPID_PARAM.Imax = POSHOLD_RATE_IMAX * 100;
+
+  #ifdef FIXEDWING
+     altPID_PARAM.kP   = (float)conf.pid[PIDALT].P8/10.0;
+     altPID_PARAM.kI   = (float)conf.pid[PIDALT].I8/100.0;
+     altPID_PARAM.kD   = (float)conf.pid[PIDALT].D8/1000.0;
+  #endif
+
   }
 //It was moved here since even i2cgps code needs it
 int32_t wrap_18000(int32_t ang) {
@@ -1498,10 +1583,10 @@ bool GPS_newFrame(uint8_t data) {
 #define I2C_GPS_ADDRESS               0x20 //7 bits       
 
 #define I2C_GPS_STATUS_00             00    //(Read only)
-  #define I2C_GPS_STATUS_NEW_DATA       0x01  // New data is available (after every GGA frame)
-  #define I2C_GPS_STATUS_2DFIX          0x02  // 2dfix achieved
-  #define I2C_GPS_STATUS_3DFIX          0x04  // 3dfix achieved
-  #define I2C_GPS_STATUS_NUMSATS        0xF0  // Number of sats in view
+#define I2C_GPS_STATUS_NEW_DATA       0x01  // New data is available (after every GGA frame)
+#define I2C_GPS_STATUS_2DFIX          0x02  // 2dfix achieved
+#define I2C_GPS_STATUS_3DFIX          0x04  // 3dfix achieved
+#define I2C_GPS_STATUS_NUMSATS        0xF0  // Number of sats in view
 #define I2C_GPS_LOCATION              07    // current location 8 byte (lat, lon) int32_t
 #define I2C_GPS_GROUND_SPEED          31    // GPS ground speed in m/s*100 (uint16_t)      (Read Only)
 #define I2C_GPS_ALTITUDE              33    // GPS altitude in meters (uint16_t)           (Read Only)
@@ -1522,22 +1607,298 @@ uint8_t GPS_NewData(void) {
   if (i2c_gps_status & I2C_GPS_STATUS_3DFIX) {                                     //Check is we have a good 3d fix (numsats>5)
     f.GPS_FIX = 1;
     if (i2c_gps_status & I2C_GPS_STATUS_NEW_DATA) {                                //Check about new data
-      GPS_Frame = 1;
+	  GPS_Frame = 1;
+	  GPS_FAIL_timer=millis();
       if (GPS_update == 1) GPS_update = 0; else GPS_update = 1; //Blink GPS update
       GPS_numSat = i2c_gps_status >>4; 
       i2c_read_reg_to_buf(I2C_GPS_ADDRESS, I2C_GPS_LOCATION,     (uint8_t*)&GPS_coord[LAT],4);
       i2c_read_reg_to_buf(I2C_GPS_ADDRESS, I2C_GPS_LOCATION+4,   (uint8_t*)&GPS_coord[LON],4);
       // note: the following vars are currently not used in nav code -- avoid retrieving it to save time
-      //i2c_read_reg_to_buf(I2C_GPS_ADDRESS, I2C_GPS_GROUND_SPEED, (uint8_t*)&GPS_speed,2);
-      //i2c_read_reg_to_buf(I2C_GPS_ADDRESS, I2C_GPS_ALTITUDE,     (uint8_t*)&GPS_altitude,2);
-      //i2c_read_reg_to_buf(I2C_GPS_ADDRESS, I2C_GPS_GROUND_COURSE,(uint8_t*)&GPS_ground_course,2);
+	  // This part is Nessesary for FIXEDWING
+      #if defined(FIXEDWING)
+        i2c_read_reg_to_buf(I2C_GPS_ADDRESS, I2C_GPS_GROUND_SPEED, (uint8_t*)&GPS_speed,2);
+        i2c_read_reg_to_buf(I2C_GPS_ADDRESS, I2C_GPS_ALTITUDE,     (uint8_t*)&GPS_altitude,2);
+        i2c_read_reg_to_buf(I2C_GPS_ADDRESS, I2C_GPS_GROUND_COURSE,(uint8_t*)&GPS_ground_course,2);
+      #endif
       return 1;
     }
   }
   return 0;
 }
 #endif //I2C_GPS
+/*****************************************************************************************/
+/*****************************************************************************************/
+/*****************************************************************************************/
+#if defined(FIXEDWING)
+void FW_NAV(){
+// Navigation with Planes under Development.
+  static int16_t NAV_deltaSum = 0, ALT_deltaSum=0;
+  static int16_t  GPS_FwTarget = 0;   // Gps correction for Fixed wing
+  static int16_t  GPS_AltErr = 0;
+  static int16_t  NAV_Thro = 0;
+  int16_t GPS_Heading = GPS_ground_course; // Store current bearing
+  int16_t Current_Heading; // Store current bearing
+  int16_t altDiff = 0 ;
+  int16_t RTH_Alt = GPS_conf.rth_altitude;
+  int16_t delta[2] = {0,0}; // D-Term
+  int16_t TX_Thro = rcData[THROTTLE]; // Read and store Throttle pos.
+
+// Calculated Altitude over home in meters
+  int16_t curr_Alt = alt.EstAlt/100; // New
+
+// Wrap GPS_Heading 1800
+  if (GPS_Heading > 1800)  GPS_Heading -= 3600;
+  if (GPS_Heading < -1800) GPS_Heading += 3600;
+
+// Only use MAG with small Tilt angle and if Mag and Gps.heading aligns
+   #if MAG
+     if (abs(att.heading -(GPS_Heading/10))>10 && GPS_speed >500) // GPS and MAG heading diff.
+       {Current_Heading = GPS_Heading/10;}else{Current_Heading = att.heading;}
+    #else
+      Current_Heading =GPS_Heading/10 ;
+    #endif
+    
+    #ifdef SIMDEBUG // TODO remove
+      Current_Heading = att.heading;
+    #endif
+      
+// Calculate Navigation errors
+  GPS_update_crosstrack();
+  GPS_FwTarget = nav_bearing/100 ;// target_bearing/100;
+  if (GPS_FwTarget >180)
+    GPS_FwTarget = GPS_FwTarget -=360 ;      
+  
+  int16_t navDiff = GPS_FwTarget - Current_Heading;	// Navigation Error in degrees
+  GPS_AltErr      = -get_altitude_error()/100; //  Altitude error in meters Negative means you're to low
+      
+// Test Base GPS_AltErr on actual diff angle to target
+#define RADIANS 0.174533f
+  float Diffangle ((wp_distance/100) / abs(GPS_AltErr));
+  Diffangle = 1 / tan(Diffangle * RADIANS);
+  if (GPS_AltErr < 0) Diffangle *= -1;
+
+// Only in   GPS_MODE_NAV & Horizon for testing
+  if (f.GPS_mode == GPS_MODE_NAV && f.HORIZON_MODE){ // && abs(GPS_AltErr) > ??? meter  && wp_distance > 500
+    GPS_AltErr = Diffangle * 10;
+    //GPS_AltErr = constrain(GPS_AltErr,GPS_MAXDIVE,GPS_MAXCLIMB); // + (Diffangle*100- att.angle[PITCH])
+   }
 
 
+/************ NavTimer ************/
+  static uint32_t gpsTimer = 0;
+  static uint16_t gpsFreq = 1000/GPS_UPD_HZ;  // 5HZ 200ms DT
+  if ( millis() - gpsTimer >= gpsFreq ){
+    gpsTimer = millis();
+
+// Throttle control
+
+// desired speed to stick setting Test TEST
+  if (rcData[THROTTLE] > MAXCHECK || f.FS_MODE){ // if throttle is on Full use predefined setting
+    NAV_Thro = CRUICETHROTTLE;    
+    if (NAV_state == NAV_STATE_WP_ENROUTE && alt_to_hold == 0) NAV_Thro = IDLE_THROTTLE; // TODO  Idle For landing Test
+  }
+  else{ // pilot has control over desired speed
+    NAV_Thro = rcData[THROTTLE];}
+
+// Deadpan for throttle at correct Alt.
+  if (abs(GPS_AltErr) > 2){ // Add AltitudeError  and scale up with a factor to throttle
+    NAV_Thro=constrain(NAV_Thro - (GPS_AltErr *SCALER_THROTTLE) , IDLE_THROTTLE ,CLIMBTHROTTLE);}
+
+// Reset Climbout Flag when Alt have been reached
+  if (f.CLIMBOUT_FW && GPS_AltErr >= 0 ) f.CLIMBOUT_FW = 0;
+ 
+// Climb out before RTH
+  if (f.GPS_mode == GPS_MODE_RTH ){
+    if (f.CLIMBOUT_FW){
+      GPS_AltErr =  - (GPS_MAXCLIMB *10) ; // Max climbAngle
+      NAV_Thro = CLIMBTHROTTLE;            // Max Allowed Throttle
+      if (curr_Alt <= SAFE_NAV_ALT) navDiff=0; // Force climb with Level Wings below safe Alt
+    }
+
+    if ( (GPS_distanceToHome < SAFE_DECSCEND_ZONE )&& curr_Alt > RTH_Alt){
+      set_new_altitude( RTH_Alt*100); //  Start decend to correct RTH Alt.
+    }
+  }
+
+// Always DISARM when Home is within 10 meters if failsafe Active.
+  if ( f.FAILSAFE_RTH_ENABLE ){
+    if ( GPS_distanceToHome <10 ){
+      f.ARMED = 0;
+      f.CLIMBOUT_FW = 0 ;    // Abort Climbout
+      set_new_altitude(500); // Come down
+    }
+  }
+	   
+// Right or left direction to next WP? New test
+//     int16_t  WP_navDiff = original_target_bearing/100 - Current_Heading;
+//     static uint8_t CheckWP= mission_step.number;
+//     if (NAV_state == NAV_STATE_WP_ENROUTE && CheckWP != mission_step.number){
+//       if (abs(WP_navDiff >= 90)) {navDiff = WP_navDiff;} else (CheckWP = mission_step.number;)
+//      }
+
+// Wrap Heading 180
+  if (navDiff <= - 180) navDiff += 360;
+  if (navDiff >= + 180) navDiff -= 360;
+// Force a left turn unless Waypointmode.
+  if (NAV_state != NAV_STATE_WP_ENROUTE)   if (abs(navDiff) > 165) navDiff  = -179;
+      
+// Filtering of navDiff 10m around home to stop nervous servos
+  if ( GPS_distanceToHome <10 )navDiff*=0.1;
+
+
+/******************************
+PID for Navigating planes.
+******************************/
+  float NavDT ;
+  static uint32_t nav_loopT;
+  NavDT = (float)(millis() - nav_loopT)/ 1000;
+  nav_loopT = millis();
+/****************************************************************************************************/
+// Altitude PID
+
+  if (abs(GPS_AltErr)<=3) AlterrorI*=NavDT;  // Remove I-Term in deadspan
+
+  GPS_AltErr*=10;
+  AlterrorI += (GPS_AltErr * altPID_PARAM.kI) * NavDT;          // Acumulate I from PIDPOSR
+  AlterrorI =constrain(AlterrorI,-500,500);                     // limits I term influence
+
+  delta[0] = (GPS_AltErr - lastAltDiff);
+              lastAltDiff = GPS_AltErr;
+  if (abs(delta[0])>100) delta[0] = 0;
+
+  for(uint8_t i=0;i <GPS_UPD_HZ;i++){ AltHist[i] = AltHist[i+1];}
+  AltHist[GPS_UPD_HZ-1]=delta[0];
+
+// Store 1 sec history for D-term in shift register
+  ALT_deltaSum = 0; // Sum History
+  for(uint8_t i=0;i<GPS_UPD_HZ;i++){ ALT_deltaSum += AltHist[i]; }
+
+  ALT_deltaSum = ( ALT_deltaSum * altPID_PARAM.kD) / NavDT;
+  altDiff = GPS_AltErr * altPID_PARAM.kP ;  // Add P in Elevator compensation.
+  altDiff +=(AlterrorI);   // Add I
+/****************************************************************************************************/
+// Nav PID NAV
+  if (abs(navDiff)<=2) NaverrorI*=NavDT; // Remove I-Term in deadspan
+  navDiff*=10;
+
+  NaverrorI += (navDiff * navPID_PARAM.kI) *NavDT;
+  NaverrorI =constrain(NaverrorI,-500,500);
+
+  delta[1] = (navDiff - lastNavDiff);
+              lastNavDiff = navDiff;
+  if (abs(delta[1])>100) delta[1] = 0; // Filter out too big values
+
+// Store 1 sec history for D-term in shift register
+  for(uint8_t i=0;i < GPS_UPD_HZ;i++){ NavDif[i] = NavDif[i+1];}
+  NavDif[GPS_UPD_HZ-1]=delta[1];
+
+  NAV_deltaSum = 0; // Sum History
+  for(uint8_t i=0;i<GPS_UPD_HZ;i++){ NAV_deltaSum += NavDif[i]; }
+
+  NAV_deltaSum = ( NAV_deltaSum *navPID_PARAM.kD )/ NavDT; // Add D
+     
+  if (f.GPS_mode == GPS_MODE_RTH )
+    {navDiff *= poshold_ratePID_PARAM.kP;} // PosR P for rth.
+  else{navDiff *= navPID_PARAM.kP;}        // Add Nav P
+      
+  navDiff += NaverrorI;        // Add I
+/****************************************************************************************************/
+
+/******* End of PID *******/
+
+// Limit outputs
+  GPS_angle[PITCH] = constrain(altDiff/10,-GPS_MAXCLIMB*10,GPS_MAXDIVE*10) + ALT_deltaSum;
+  GPS_angle[YAW]   = constrain(navDiff/10,-GPS_RUDDER*10,  GPS_RUDDER*10 ) + NAV_deltaSum;
+  GPS_angle[ROLL]  = constrain(navDiff/10,-GPS_MAXCORR*10, GPS_MAXCORR*10) + NAV_deltaSum;
+  //GPS_angle[ROLL]  = constrain(navDiff/10,-GPS_conf.nav_bank_max, GPS_conf.nav_bank_max) + NAV_deltaSum; // From Gui   
+   
+//***********************************************//
+// Elevator compensation depending on behaviour. //
+//***********************************************//
+// Prevent stall with Disarmed motor  New TEST
+  if ( f.MOTORS_STOPPED ){ GPS_angle[PITCH]=constrain(GPS_angle[PITCH],0, GPS_MAXDIVE*10);}
+  
+// Add elevator compared with rollAngle
+  if (!f.CLIMBOUT_FW) {GPS_angle[PITCH]-= abs(att.angle[ROLL]) * (ELEVATORCOMPENSATION /100);}
+
+//***********************************************//
+// Throttle compensation depending on behaviour. //
+//***********************************************//
+  // Compensate throttle with pitch Angle
+  NAV_Thro -= constrain(att.angle[PITCH] * PITCH_COMP ,0 ,450 );
+  NAV_Thro  = constrain(NAV_Thro,IDLE_THROTTLE ,CLIMBTHROTTLE );
+
+ FW_NavSpeed();
+ NAV_Thro += SpeedBoost;
+
+  }
+/******* End of NavTimer *******/
+
+// PassThru for throttle In AcroMode
+  if ( (!f.ANGLE_MODE && !f.HORIZON_MODE) || ( f.PASSTHRU_MODE && !f.FAILSAFE_RTH_ENABLE ) ){
+    NAV_Thro = TX_Thro;
+    GPS_angle[PITCH] =0;
+    GPS_angle[ROLL]  =0;
+    GPS_angle[YAW]   =0;
+    }
+  rcCommand[THROTTLE] = NAV_Thro;
+  rcCommand[YAW] += GPS_angle[YAW];
+
+/***************** DEBUG FUNCTIONS *****************/
+//  debug[0]=original_target_bearing/100;
+//  debug[0]=GPS_angle[PITCH];
+//  debug[3]=f.CLIMBOUT_FW ;
+//debug[2]= -get_altitude_error()/100 ;
+//debug[3]= wp_distance/100;
+#ifdef TESTBED
+//  debug[0]= original_target_bearing/100;   ; 
+//  debug[1]= wp_distance/100;
+//  debug[2]= -get_altitude_error()/100 ;
+//  debug[3]= f.CLIMBOUT_FW  ;
+//  GPS_directionToHome = GPS_FwTarget; // changes dir to hom to dir to wp
+#endif
+  /******* End of DEBUG FUNCTIONS *******/
+}
+/******* End of FixedWing Navigation *******/
+
+
+/*############### Nav Speed ###############*/
+void FW_NavSpeed(void){
+    #define GPS_MINSPEED  500  // 500= ~18km/h
+    #define I_TERM        0.1f
+  #if defined (AIRSPEED)
+    static int16_t air_Navspeed = AIRSPEED *100;
+    static int16_t air_Maxspeed = AIR_MAXSPEED *100;
+    int spDiff = 0;
+    static int spAdd  = 0;
+
+    if ((GPS_speed ) < (GPS_MINSPEED )) { // check for too slow ground speed
+      int Delta = (GPS_MINSPEED - GPS_speed)*I_TERM;
+       spAdd += (Delta == 0)? 1 : Delta;  // increase nav air speed
+    } else {
+      spAdd -= spAdd*I_TERM;                       // decrease nav air speed
+    }
+    spAdd = constrain(spAdd, 0, air_Maxspeed - air_Navspeed - 100);
+
+    if (airspeedSpeed < air_Navspeed - 100 + spAdd || airspeedSpeed > air_Navspeed + 100 + spAdd) {  // maintain air speed between NAVSPEED and MAXSPEED
+      spDiff = (air_Navspeed + spAdd - airspeedSpeed);  //math bug if put multiplication in same line
+      spDiff = spDiff * I_TERM;
+      SpeedBoost += spDiff;
+    }
+
+    SpeedBoost = constrain(SpeedBoost,-500,500);
+  #else  
+    // Force the Plane move forward in headwind with SpeedBoost
+    int16_t groundSpeed = GPS_speed;
+    static uint16_t boostlimit = MAXTHROTTLE - CRUICETHROTTLE;
+
+    int spDiff=(GPS_MINSPEED -groundSpeed)*I_TERM;
+    if (GPS_speed < GPS_MINSPEED-50 || GPS_speed > GPS_MINSPEED+50)SpeedBoost += spDiff;
+    SpeedBoost = constrain(SpeedBoost,0,boostlimit);
+  #endif
+}
+/*############### End Nav Speed ###############*/
+
+#endif // FIXEDWING
 
 #endif // GPS Defined

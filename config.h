@@ -1,6 +1,5 @@
 #ifndef CONFIG_H_
 #define CONFIG_H_
-
 /*************************************************************************************************/
 /****           CONFIGURABLE PARAMETERS                                                       ****/
 /*************************************************************************************************/
@@ -24,6 +23,50 @@
  * 2. parameters marked with (**) in the comment are stored in eeprom and can be changed via the GUI
  */
 
+/**************************************************************************** /
+ New Testsetup example makes WP Nav with a 328p FC possble
+ Code based on V2.4 from MWii sourcecode
+ It can fly waypoints, RTH and PosHold. waypoints  is still experimental but works
+
+ This version can run on a 328p based FC.
+ A 328p shrinks the code for small processors automatically
+ With limited Waypoints and Nav functions (Only WP is tested) */
+ 
+//#define COPTERTEST 21  // PatrikE Benchtest OLRS as FC
+//#define COPTERTEST 99  // PatrikE EZ-Hawk
+
+/****  New Testfunctions  ****/ 
+/*======================================================*/
+#define STAY_IN_MISSION    // Continue Mission even in Failsafe
+
+/****  SERVO_FIELD_TRIM  ****
+Center servos with trims.
+With Plane Inverted in Passthru & Disarmed.
+Calib gyro with sticks release sticks quickly
+Make sure Elevator stay in Max position.
+Remove TX trims when servos return to center again...
+Ready to fly...*/
+#define SERVO_FIELD_TRIM
+
+/*======================================================*/
+
+
+/// Example setup for a Airplane
+//#define AIRPLANE
+//#define CRIUS_SE
+
+//#define GPS_SERIAL 0      // For Promini GPS_BAUD & SERIAL0_COM_SPEED must be same!
+//#define GPS_BAUD   115200 // For Promini GPS_BAUD & SERIAL0_COM_SPEED must be same!
+//#define NMEA
+
+//#define FAILSAFE
+//#define USE_MSP_WP
+//#define SERIAL_SUM_PPM         ROLL,PITCH,THROTTLE,YAW,AUX1,AUX2,AUX3,AUX4,8,9,10,11 //For Robe/Hitec/Futaba
+//#define PPM_ON_THROTTLE
+//#define MOTOR_STOP
+//#define MAXTHROTTLE 2000
+
+/****************************************************************************/
 
 /*************************************************************************************************/
 /*****************                                                                 ***************/
@@ -41,7 +84,7 @@
     //#define Y6
     //#define HEX6
     //#define HEX6X
-    //#define HEX6H  // New Model
+    //#define HEX6H
     //#define OCTOX8
     //#define OCTOFLATP
     //#define OCTOFLATX
@@ -52,6 +95,8 @@
     //#define DUALCOPTER
     //#define HELI_120_CCPM
     //#define HELI_90_DEG
+    
+    //#define QUADWING // New Experimental testmodel
 
   /****************************    Motor minthrottle    *******************************/
     /* Set the minimum throttle command sent to the ESC (Electronic Speed Controller)
@@ -160,6 +205,10 @@
       //#define Flyduino9DOF       // Flyduino 9DOF IMU MPU6050+HMC5883l
       //#define Nano_Plane         // Multiwii Plane version with tail-front LSM330 sensor http://www.radiosait.ru/en/page_5324.html
       
+      
+      //#define OPENLRS_V2          // OpenLRS v2 Or Orange LRS as FC Add your own sensors.
+      #define HOPLIST {13,54,23}
+      #define OLRS_HEADER {'O','L','R','S'}
     /***************************    independent sensors    ********************************/
       /* leave it commented if you already checked a specific board above */
       /* I2C gyroscope */
@@ -266,6 +315,11 @@
     //#define CAMTRIG
     #define CAM_TIME_HIGH 1000   // the duration of HIGH state servo expressed in ms
 
+  /***********************          Flying Wing                    ***********************/
+    // Throw Per Axis on servos
+	#define ROLLRATE  0.5f
+	#define PITCHRATE 0.5f
+
   /***********************          Airplane                       ***********************/
     //#define USE_THROTTLESERVO // For use of standard 50Hz servo on throttle.
 
@@ -276,6 +330,9 @@
     //#define FLAPS                       // Traditional Flaps on SERVO3.
     //#define FLAPSPEED     3             // Make flaps move slowm Higher value is Higher Speed.
 
+    //#define AUTOFLAPS  // http://www.rcgroups.com/forums/showpost.php?p=30695660&postcount=647
+	#define AUTOFLAPS_V_RETRACTED 500 // > Speed cm/s where flaps are full retracted
+	#define AUTOFLAPS_V_EXTENDED  350 // < Speed or less where flaps are fully extended
   /***********************      Common for Heli & Airplane         ***********************/
 
     /* Governor: attempts to maintain rpm through pitch and voltage changes
@@ -581,7 +638,7 @@ At this moment you can use this function only with WinGUI 2.3 release. MultiWiiC
   /************************        AP FlightMode        **********************************/
   /*** FUNCTIONALITY TEMPORARY REMOVED ***/
     /* Temporarily Disables GPS_HOLD_MODE to be able to make it possible to adjust the Hold-position when moving the sticks.*/
-    //#define AP_MODE 40  // Create a deadspan for GPS.
+    #define AP_MODE 40  // Create a deadspan for GPS.
         
   /************************   Assisted AcroTrainer    ************************************/
     /* Train Acro with auto recovery. Value set the point where ANGLE_MODE takes over.
@@ -738,7 +795,7 @@ Also note, that maqgnetic declination changes with time, so recheck your value e
 // Also aborts mission if the next waypoint distance is more than this number
 #define SAFE_WP_DISTANCE           500      //(**)
 
-//Maximu allowable navigation altitude (in meters) automatic altitude control will not go above this height
+//Maximum allowable navigation altitude (in meters) automatic altitude control will not go above this height
 #define MAX_NAV_ALTITUDE           100     //(**)
 
 // minimum speed when approach waypoint
@@ -753,12 +810,12 @@ Also note, that maqgnetic declination changes with time, so recheck your value e
 #define NAV_BANK_MAX 3000                 //(**)
 
 //Defines the RTH altitude. 0 means keep current alt during RTH (in meters)
-#define RTH_ALTITUDE               15        //(**)
+#define RTH_ALTITUDE               50        //(**)
 //Wait to reach RTH alt before start moving to home (0-no, 1-yes)
 #define WAIT_FOR_RTH_ALT           1         //(**)
 
 //Navigation engine will takeover BARO mode control
-#define NAV_TAKEOVER_BARO          1         //(**)
+#define NAV_TAKEOVER_BARO          0         //(**)
 
 //Throttle stick input will be ignored  (only in BARO)
 #define IGNORE_THROTTLE            1         //(**)
@@ -965,6 +1022,33 @@ Also note, that maqgnetic declination changes with time, so recheck your value e
      * + want to save memory space */
     //#define SUPPRESS_BARO_ALTHOLD
 
+  /********************************************************************/
+  /****                   Airspeed                                 ****/
+  /********************************************************************/
+
+  /* Airspeed sensor will initialize in one second on bootup of controler. Take care not letting the wind blow into pitot tube!
+     Airspeed is meters/sec   1m/sec = 3,6km/h
+  */
+
+    //#define AIRSPEED    15      // Activate the airspeed code Units is 1 M/sec = 3.6km/h
+    #define AIR_MAXSPEED  30      // M/sec  30= ~108km/h. Airframe dependant.
+    
+    #define AIRSPEED_PIN A2       // Analog PIN 4
+    #define AIRSPEED_FACTOR 1519  // Calculation see bottom annotations  Arduplane 1.5191  Original 1196
+//    #define AIRSPEED_SMOOTH 5     // smoothing
+//    #define VOLTS_TO_PASCAL 819   // scaling for 3DR analog airspeed sensor
+//    #define Vcc  4.95f
+    /* Background for calculation of AIRSPEED_FACTOR
+    v [m/s]= sqrt(2 * roh * delta-pressure[Pa])
+
+    1 increment (Analog read) = VCC/1024 = 5V/1024 = 0.0048828125 = 0.00488V = 4.88mV
+    Datasheet of MPXV7002: 1 = 1kPa -> 1mV = 1Pa
+    roh(@15 �C, 1bar air pressure) = 1,225 kg/m�
+
+    -> 1 increment = 4.88mV = 4.88Pa
+    -> v [m/s] = sqrt(2 * roh * delta-pressure[Pa]) = sqrt(2 * roh * 4.88 * AnalogReadIncrements)
+    AIRSPEED_FACTOR = 2 * roh * 4.88
+    */
   /********************************************************************/
   /****           altitude variometer                              ****/
   /********************************************************************/

@@ -131,6 +131,132 @@
   #define LCD_LCD03S
   #define SERIAL0_COM_SPEED 9600
   #define LCD_CONF
+#elif COPTERTEST == 20
+  #define QUADWING
+  #define CRIUS_AIO_PRO
+#elif COPTERTEST == 21
+/* OLRS FC test ************************/
+  #define AIRPLANE
+  #define OPENLRS_V2
+  #define RX_RSSI_CHAN 9
+  #define MPU6050
+  #define FAILSAFE
+  #define FAILSAFE_DETECT_TRESHOLD  995
+  #define MOTOR_STOP
+  #define MAXTHROTTLE 2000
+//  #define USE_MSP_WP  // For Waypoint navigation.
+  #define AP_MODE 40  // Create a deadspan for GPS.
+  #define GPS_SERIAL 0
+  #define GPS_BAUD   115200
+  #define NMEA
+  #define USE_MSP_WP  // For Waypoint navigation.
+/* OLRS FC test ************************/
+#elif COPTERTEST == 11
+/***************************************************/
+#define TESTBED  // My Debugprint functions
+#define SIMDEBUG // For using GPSemulator
+//#define SERIAL3_COM_SPEED 4800  // For vario
+//#define GPS_SIMULATOR
+
+//#define BUZZER
+//#define OVERRIDE_BUZZERPIN_PINMODE          pinMode (10, OUTPUT); // use A2 instead of d8
+//#define OVERRIDE_BUZZERPIN_ON               PORTB |= 4<<2 //PORTB |= 1;
+//#define OVERRIDE_BUZZERPIN_OFF              PORTB &= ~(4<<2); //PORTB &= ~1;
+  
+#define AIRPLANE
+#define SERIAL_SUM_PPM         ROLL,PITCH,THROTTLE,YAW,AUX1,AUX2,AUX3,AUX4,8,9,10,11 //For Robe/Hitec/Futaba
+#define PPM_ON_THROTTLE
+#define FAILSAFE
+#define MOTOR_STOP
+#define MAXTHROTTLE 2000
+
+#define INIT_MTK_GPS
+#define CRIUS_AIO_PRO
+#define GPS_SERIAL 2
+#define NMEA
+#define GPS_BAUD   115200
+#define USE_MSP_WP  // For Waypoint navigation.
+#define AP_MODE 40  // Create a deadspan for GPS.
+#define FAILSAFE
+#define FAILSAFE_DETECT_TRESHOLD  995
+
+/***************************************************/  
+#elif COPTERTEST == 99
+//#define AIRPLANE
+#define FLYING_WING
+
+#define SERIAL_SUM_PPM         ROLL,PITCH,THROTTLE,YAW,AUX1,AUX2,AUX3,AUX4,8,9,10,11 //For Robe/Hitec/Futaba
+#define PPM_ON_THROTTLE
+#define FAILSAFE
+#define MAXTHROTTLE 2000
+
+//#define SERIAL0_COM_SPEED 57600
+//#define AIRSPEED    15
+
+//#define I2C_GPS
+//#define GPS_SERIAL 2
+//#define NMEA
+//#define INIT_MTK_GPS
+//#define UBLOX
+//#define GPS_BAUD   115200
+
+#define USE_MSP_WP  // For Waypoint navigation.
+#define AP_MODE 40  // Create a deadspan for GPS.
+#define FAILSAFE
+#define FAILSAFE_DETECT_TRESHOLD  995
+#define MOTOR_STOP
+
+
+#if defined (FLYING_WING)
+  #define CRIUS_SE
+  #define GPS_SERIAL 0
+  #define GPS_BAUD   115200
+  #define NMEA
+  #define  SERVO_MIN  {1020, 1020, 1020, 1020, 1020, 1020, 1020, 1020}
+  #define  SERVO_MAX  {2000, 2000, 2000, 2000, 2000, 2000, 2000, 2000}
+  #define  SERVO_MID  {1500, 1500, 1500, 1412, 1445, 1500, 1572, 1500}
+  #define  FORCE_SERVO_RATES  {30, 30, 100, 0, 1, 100, 100, 100}
+#endif
+
+#if defined (AIRPLANE)
+// MONGOOSE1_0 in EZ-Hawk setup
+  #define PATRIKE
+  #define MONGOOSE1_0
+  #define GPS_SERIAL 0
+  #define GPS_BAUD   115200
+
+//  #define FLAPPERONS    AUX4
+//  #define FLAPPERON_INVERT { 1, -1 }
+//  #define FLAPSPEED     3
+
+  #define GPS_SERIAL 0
+  #define GPS_BAUD   115200
+  #define NMEA    
+  #define FORCE_GYRO_ORIENTATION(X, Y, Z) {imu.gyroADC[ROLL] =  -X; imu.gyroADC[PITCH] = -Y; imu.gyroADC[YAW] = -Z;}
+  #define FORCE_ACC_ORIENTATION(Y, X, Z)  {imu.accADC[ROLL]  =  -X; imu.accADC[PITCH]  =  Y; imu.accADC[YAW]  =  Z;}
+  #define FORCE_MAG_ORIENTATION(X, Y, Z)  {imu.magADC[ROLL]  =   Y; imu.magADC[PITCH]  = -X; imu.magADC[YAW]  = -Z;}
+  
+  #define  SERVO_MIN  {1020, 1020, 1020, 1020, 1020, 1020, 1020, 1020}
+  #define  SERVO_MAX  {2000, 2000, 2000, 2000, 2000, 2000, 2000, 2000}
+  #define  SERVO_MID  {1500, 1500, 1500, 1592, 1549, 1500, 1572, 1500}
+  #define  FORCE_SERVO_RATES  {30, 30, 100, 89, 88, 100, 82, 100}
+#endif
+
+#elif COPTERTEST == 100 // SKYMULE
+#define AIRPLANE
+#define CRIUS_AIO_PRO
+#define SERIAL_SUM_PPM         ROLL,PITCH,THROTTLE,YAW,AUX1,AUX2,AUX3,AUX4,8,9,10,11 //For Robe/Hitec/Futaba
+#define PPM_ON_THROTTLE
+#define FAILSAFE
+#define MOTOR_STOP
+
+#define GPS_SERIAL 2
+#define UBLOX
+#define USE_MSP_WP
+
+#define AIRSPEED    15
+#define AIRSPEED_PIN A9
+
 #elif defined(COPTERTEST)
   #error "*** this test is not yet defined"
 #endif
@@ -156,8 +282,29 @@
 /**************************************************************************************/
 #define SERVO_RATES      {30,30,100,100,100,100,100,100}
 
-#if defined (AIRPLANE) || defined(FLYING_WING)
+#if defined (AIRPLANE) || defined(FLYING_WING) || defined(QUADWING)
   #define FIXEDWING
+  #if defined (GPS_SERIAL) || defined(I2C_GPS)
+      #include "GPS.h"
+ // Settings Moved from gps.h Recomended fpr Airplane Navigation
+      #define NAV_SET_TAKEOFF_HEADING    false
+
+
+      #define DONT_RESET_HOME_AT_ARM
+      #undef ONLYARMWHENFLAT
+      #define SLIM_WING
+      #if defined(FAILSAFE)
+        #define FAILSAFE_RTH 1
+      #else
+      #define FAILSAFE_RTH 0
+    #endif
+  #endif
+#endif
+
+#if defined (STAY_IN_MISSION)
+  #define FAILSAFE_MISSION 1
+#else
+  #define FAILSAFE_MISSION 0
 #endif
 
 #if defined(HELI_120_CCPM) || defined(HELI_90_DEG)
@@ -202,6 +349,10 @@
     #define NUMBER_MOTOR   1
     #define PRI_SERVO_TO   5 // use servo from 4 to 5
   #endif
+#elif defined(QUADWING)
+  #define PRI_SERVO_FROM   1 // use servo from 4 to 5
+  #define PRI_SERVO_TO     5
+  #define NUMBER_MOTOR     4  
 #elif defined(SINGLECOPTER)
   #define NUMBER_MOTOR     1
   #define PRI_SERVO_FROM   4 // use servo from 4 to 7
@@ -1559,12 +1710,15 @@
   #undef INTERNAL_I2C_PULLUPS
 #endif
 
-#if defined(OPENLRSv2MULTI)
-  #define ITG3200
-  #define ADXL345
-  #define ACC_ORIENTATION(X, Y, Z)  {imu.accADC[ROLL]  = -X; imu.accADC[PITCH]  = -Y; imu.accADC[YAW]  =  Z;}
-  #define GYRO_ORIENTATION(X, Y, Z) {imu.gyroADC[ROLL] =  Y; imu.gyroADC[PITCH] = -X; imu.gyroADC[YAW] = -Z;}
-  #define ADXL345_ADDRESS 0x53
+#if defined(OPENLRSv2MULTI) || defined(OPENLRS_V2)
+  #define OPENLRSv2MULTI 
+  #if !defined(OPENLRS_V2)
+    #define ITG3200
+    #define ADXL345
+    #define ACC_ORIENTATION(X, Y, Z)  {imu.accADC[ROLL]  = -X; imu.accADC[PITCH]  = -Y; imu.accADC[YAW]  =  Z;}
+    #define GYRO_ORIENTATION(X, Y, Z) {imu.gyroADC[ROLL] =  Y; imu.gyroADC[PITCH] = -X; imu.gyroADC[YAW] = -Z;}
+    #define ADXL345_ADDRESS 0x53
+  #endif
   
   #define SDO_pin A0
   #define SDI_pin A1        
@@ -1641,6 +1795,24 @@
 /**************************************************************************************/
 /***************              Sensor Type definitions              ********************/
 /**************************************************************************************/
+#if defined(SLIM_WING)
+  #if !defined(MEGA) || defined (TESTBED) // Only for small FC
+    // BARO
+    #undef BMP085 
+    #undef MS561101BA
+  
+    //MAG
+    #undef HMC5843
+    #undef HMC5883
+    #undef AK8975
+    #undef MAG3110
+    #undef MPU6050_EN_I2C_BYPASS  
+    #undef MPU6050_I2C_AUX_MASTER
+    #undef GPS_LED_INDICATOR
+  #else
+    #undef SLIM_WING
+  #endif
+#endif
 
 #if defined(ADXL345) || defined(BMA020) || defined(BMA180) || defined(BMA280) || defined(MMA7455) || defined(ADCACC) || defined(LIS3LV02) || defined(LSM303DLx_ACC) || defined(MPU6050) || defined(LSM330) || defined(MMA8451Q)
   #define ACC 1
@@ -1742,6 +1914,8 @@
   #define SERVO_RATES      {30,30,100,0,1,0,1,100}
 #elif defined(DUALCOPTER)
   #define MULTITYPE 20
+#elif defined(QUADWING)
+  #define MULTITYPE 8 //  Show as wing #8  or QuadX #3
 #endif
 
 /**************************************************************************************/
@@ -1900,9 +2074,6 @@
   #define DISPLAY_COLUMNS 16
 #endif
 
-#if (defined(FRSKY_TELEMETRY) || (SPORT_TELEMETRY))
-  #define TELEMETRY
-#endif
 
 /**************************************************************************************/
 /***************               override defaults                   ********************/

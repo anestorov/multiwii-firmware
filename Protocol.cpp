@@ -42,6 +42,8 @@
 #define MSP_BOXIDS               119   //out message         get the permanent IDs associated to BOXes
 #define MSP_SERVO_CONF           120   //out message         Servo settings
 
+#define MSP_PIPAK                188
+
 #define MSP_NAV_STATUS           121   //out message         Returns navigation status
 #define MSP_NAV_CONFIG           122   //out message         Returns navigation parameters
 
@@ -176,13 +178,18 @@ enum MSP_protocol_bytes {
   HEADER_CMD
 };
 
+void msp_push(uint8_t uart, uint8_t msp){
+  CURRENTPORT=uart; 
+  cmdMSP[CURRENTPORT]=msp;
+  evaluateCommand(msp);
+}
+
 void serialCom() {
   uint8_t c,cc,port,state,bytesTXBuff;
   static uint8_t offset[UART_NUMBER];
   static uint8_t dataSize[UART_NUMBER];
   static uint8_t c_state[UART_NUMBER];
   uint32_t timeMax; // limit max time in this function in case of GPS
-
   timeMax = micros();
   for(port=0;port<UART_NUMBER;port++) {
     CURRENTPORT=port;
@@ -243,8 +250,9 @@ void serialCom() {
             if (GPS_update == 1) GPS_update = 0; else GPS_update = 1; //Blink GPS update
             GPS_last_frame_seen = timeMax;
             GPS_Frame = 1;
+            GPS_FAIL_timer=millis();
           }
-  
+  //  TODO!!!  This check fails if GPS is lost..  TODO!!!
           // Check for stalled GPS, if no frames seen for 1.2sec then consider it LOST
           if ((timeMax - GPS_last_frame_seen) > 1200000) {
             //No update since 1200ms clear fix...
@@ -269,7 +277,7 @@ void evaluateCommand(uint8_t c) {
     //  break;
     case MSP_SET_RAW_RC:
       s_struct_w((uint8_t*)&rcSerial,16);
-      rcSerialCount = 50; // 1s transition 
+      rcSerialCount = 150; // 1s transition 
       break;
     case MSP_SET_PID:
       mspAck();
@@ -425,6 +433,9 @@ void evaluateCommand(uint8_t c) {
             tmp |= 1<<BOXGPSNAV;
             break;
         }
+        #if defined(FIXEDWING) 
+          if(f.CRUISE_MODE) tmp |= 1<<BOXCRUISE;
+        #endif
       #endif
       #if defined(FIXEDWING) || defined(HELICOPTER)
         if(f.PASSTHRU_MODE) tmp |= 1<<BOXPASSTHRU;
@@ -475,6 +486,7 @@ void evaluateCommand(uint8_t c) {
     case MSP_MOTOR:
       s_struct((uint8_t*)&motor,16);
       break;
+#ifndef SLIM_WING
     case MSP_ACC_TRIM:
       headSerialReply(4);
       s_struct_partial((uint8_t*)&conf.angleTrim[PITCH],2);
@@ -486,10 +498,12 @@ void evaluateCommand(uint8_t c) {
       s_struct_w((uint8_t*)&conf.angleTrim[PITCH],2);
       s_struct_w((uint8_t*)&conf.angleTrim[ROLL],2);
       break;
+#endif
     case MSP_RC:
       s_struct((uint8_t*)&rcData,RC_CHANS*2);
       break;
     #if GPS
+#ifndef SLIM_WING
     case MSP_SET_RAW_GPS:
       struct {
         uint8_t a,b;
@@ -507,6 +521,7 @@ void evaluateCommand(uint8_t c) {
       GPS_speed = set_set_raw_gps.f;
       GPS_update |= 2;              // New data signalisation to GPS functions
       break;
+#endif
     case MSP_RAW_GPS:
       struct {
         uint8_t a,b;
@@ -534,6 +549,24 @@ void evaluateCommand(uint8_t c) {
       msp_comp_gps.c     = GPS_update & 1;
       s_struct((uint8_t*)&msp_comp_gps,5);
       break;
+   case MSP_PIPAK:
+   struct {
+        uint32_t a,b;
+        int16_t c,d;
+      } msp_pipak;
+        msp_pipak.a     = GPS_coord[LAT];
+        msp_pipak.b     = GPS_coord[LON];
+        msp_pipak.c     = alt.EstAlt;
+        msp_pipak.d     = alt.vario;
+      s_struct((uint8_t*)&msp_pipak,12);
+//      headSerialReply(12);
+//      serialize32(GPS_coord[LAT]);
+//      serialize32(GPS_coord[LON]);
+//      serialize16(alt.EstAlt);
+//      serialize16(alt.vario);
+//      tailSerialReply();
+      break;
+
     #if defined(USE_MSP_WP)
     case MSP_SET_NAV_CONFIG:
       mspAck();
@@ -653,6 +686,7 @@ void evaluateCommand(uint8_t c) {
       break;
     #endif //USE_MSP_WP
     #endif //GPS
+    
     case MSP_ATTITUDE:
       s_struct((uint8_t*)&att,6);
       break;
@@ -809,6 +843,11 @@ void SerialWrite16(uint8_t port, int16_t val)
   serialize16(val);UartSendData(port);
 }
 
+void SerialWrite32(uint8_t port, int32_t val)
+{
+  CURRENTPORT=port;
+  serialize32(val);UartSendData(port);
+}
 
 #ifdef DEBUGMSG
 void debugmsg_append_str(const char *str) {

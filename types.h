@@ -82,6 +82,9 @@ enum box {
   #if GPS
     BOXGPSNAV,
     BOXLAND,
+    #if defined(FIXEDWING) 
+      BOXCRUISE,
+    #endif
   #endif
   CHECKBOXITEMS
 };
@@ -121,6 +124,8 @@ typedef struct {
   uint8_t HORIZON_MODE :1 ;
   uint8_t MAG_MODE :1 ;
   uint8_t BARO_MODE :1 ;
+  uint8_t MOTORS_STOPPED :1;
+  uint8_t FS_MODE: 1;        // Failsafe Flag
 #ifdef HEADFREE
   uint8_t HEADFREE_MODE :1 ;
 #endif
@@ -135,7 +140,7 @@ typedef struct {
   uint8_t VARIO_MODE :1;
 #endif
   uint8_t GPS_mode: 2;               // 0-3 NONE,HOLD, HOME, NAV (see GPS_MODE_* defines
-#if BARO || GPS
+#if BARO || GPS || defined(FIXEDWING)
   uint8_t THROTTLE_IGNORED : 1;      // If it is 1 then ignore throttle stick movements in baro mode;
 #endif
 #if GPS
@@ -145,7 +150,11 @@ typedef struct {
   uint8_t GPS_head_set: 1;           // it is 1 if the navigation engine got commands to control heading (SET_POI or SET_HEAD) CLEAR_HEAD will zero it
   uint8_t LAND_COMPLETED: 1;
   uint8_t LAND_IN_PROGRESS: 1;
+  uint8_t CLIMBOUT_FW :1 ;
+  uint8_t Fixed_Wing_Nav :1;
+  uint8_t CRUISE_MODE :1;  
 #endif
+  uint8_t FAILSAFE_RTH_ENABLE :1;
 } flags_struct_t;
 
 typedef struct {
@@ -311,9 +320,6 @@ typedef struct {
   // Second byte
   uint8_t ignore_throttle: 1; // Disable stick controls during mission and RTH
   uint8_t takeover_baro: 1;
-
-
-
 
   uint16_t wp_radius;           // in cm
   uint16_t safe_wp_distance;    // in meter

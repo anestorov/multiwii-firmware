@@ -1,0 +1,44 @@
+/*
+Recommended minimum settings for GPS fixedwing 
+This settings in config.h
+====================================================================
+
+//#define FLYING_WING            // Select model
+#define AIRPLANE
+
+#define CRIUS_SE                 // Select your FC
+
+#define MOTOR_STOP               // Just for safety
+#define MAXTHROTTLE 2000         // To get full power
+#define NO_FLASH_CHECK
+#define RTH_ALTITUDE     50      // Safe min alt for RTH 
+
+#define MAG_DECLINATION  3.6f    // For your location.
+
+
+// Example of Gps setup
+#define GPS_SERIAL 2             // Setup your GPS
+#define GPS_BAUD   57600
+#define UBLOX
+
+
+====================================================================
+In Gps.h
+All settings for limiting maximum values during navigation.
+Limit of throttle,Zones and altitudes.
+
+====================================================================
+Settings In Gui.
+NavR_P,I,D => for navigation
+ALT_P,I,D  => P for altitude
+
+Setings available in EOS Wingui
+http://eosbandi.com/downloads/
+And in config.h
+
+Set RTH altitude in meter over home pos (50)
+
+// Will RTH if plane fly further. 
+   set to zero to disable if you want to fly long distance
+  FENCE_DISTANCE   600
+

@@ -7,6 +7,11 @@ uint8_t Mag_getADC();
 uint8_t Baro_update();
 void Sonar_update();
 
+
+#if defined(AIRSPEED)
+void Airspeed_update();
+#endif
+
 void initSensors();
 void i2c_rep_start(uint8_t address);
 void i2c_write(uint8_t data );

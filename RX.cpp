@@ -530,17 +530,17 @@ void computeRC() {
 //Select the hopping channels between 0-255
 // Default values are 13,54 and 23 for all transmitters and receivers, you should change it before your first flight for safety.
 //Frequency = CARRIER_FREQUENCY + (StepSize(60khz)* Channel_Number) 
-static uint8_t hop_list[3] = {13,54,23}; 
 
+static uint8_t hop_list[3]  = HOPLIST;//{13,54,23}; 
 //###### RF DEVICE ID HEADERS #######
 // Change this 4 byte values for isolating your transmission, RF module accepts only data with same header
-static uint8_t RF_Header[4] = {'O','L','R','S'};  
+static uint8_t RF_Header[4] = OLRS_HEADER;//{'O','L','R','S'}; 
      
 //########## Variables #################
 
 static uint32_t last_hopping_time;
 static uint8_t RF_Rx_Buffer[17];
-static uint16_t temp_int;
+static uint16_t temp_int, rx_rssi;
 static uint16_t Servo_Buffer[10] = {3000,3000,3000,3000,3000,3000,3000,3000};   //servo position values from RF
 static uint8_t hopping_channel = 1;
 
@@ -717,18 +717,19 @@ void RF22B_init_parameter(void) {
   _spi_write(0x77, 0x00); 
 }
 
-
-void checkPots() {
-  ////Flytron OpenLRS Multi Pots
-  pot_P = analogRead(7);
-  pot_I = analogRead(6);
+#if !defined(OPENLRS_V2)
+  void checkPots() {
+    ////Flytron OpenLRS Multi Pots
+    pot_P = analogRead(7);
+    pot_I = analogRead(6);
   
-  pot_P = pot_P - 512;
-  pot_I = pot_I - 512;
+    pot_P = pot_P - 512;
+    pot_I = pot_I - 512;
   
-  pot_P = pot_P / 25; //+-20
-  pot_I = pot_I / 25; //+-20
+    pot_P = pot_P / 25; //+-20
+    pot_I = pot_I / 25; //+-20
 }
+#endif
 
 void initOpenLRS(void) {
   pinMode(GREEN_LED_pin, OUTPUT);  
@@ -740,7 +741,9 @@ void initOpenLRS(void) {
   pinMode(SCLK_pin, OUTPUT); //SCLK
   pinMode(IRQ_pin, INPUT); //IRQ
   pinMode(nSel_pin, OUTPUT); //nSEL
-  checkPots(); // OpenLRS Multi board hardware pot check;
+  #if !defined(OPENLRS_V2)
+    checkPots(); // OpenLRS Multi board hardware pot check;
+  #endif
 } 
 
 //----------------------------------------------------------------------- 
@@ -819,6 +822,8 @@ void Config_OpenLRS() {
 void Read_OpenLRS_RC() {
   uint8_t i,tx_data_length;
   uint8_t first_data = 0;
+//rcData[RX_RSSI_CHAN] =0;
+//rx_rssi=0;
 
   if (_spi_read(0x0C)==0) {RF22B_init_parameter(); to_rx_mode(); }// detect the locked module and reboot                         
   if ((currentTime-last_hopping_time > 25000)) {//automatic hopping for clear channel when rf link down for 25ms. 
@@ -834,6 +839,12 @@ void Read_OpenLRS_RC() {
     for(i = 0; i<17; i++) {//read all buffer 
       RF_Rx_Buffer[i] = read_8bit_data(); 
     }  
+    
+    #if defined(RX_RSSI_CHAN)
+      rx_rssi =  _spi_read(0x26); // Read the RSSI value
+      rcData[RX_RSSI_CHAN] =   map(constrain(rx_rssi,45,120),40,120,0,2000);
+    #endif
+    
     rx_reset();
     if (RF_Rx_Buffer[0] == 'S') {// servo control data
       for(i = 0; i<8; i++) {//Write into the Servo Buffer                                                       
@@ -848,6 +859,9 @@ void Read_OpenLRS_RC() {
       rcData[AUX2] = Servo_Buffer[5]; 
       rcData[AUX3] = Servo_Buffer[6]; 
       rcData[AUX4] = Servo_Buffer[7];  
+      #if defined(FAILSAFE)
+        if(failsafeCnt > 20) failsafeCnt -= 20; else failsafeCnt = 0;   // Valid frame, clear FailSafe counter
+      #endif
     }
     #if (FREQUENCY_HOPPING==1)
       Hopping(); //Hop to the next frequency

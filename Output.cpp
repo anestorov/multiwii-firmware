@@ -1227,16 +1227,55 @@ void mixTable() {
     } else {
       servo[7] = constrain(rcCommand[THROTTLE], conf.minthrottle, MAXTHROTTLE);
     }
-    motor[0] = servo[7];
-    if (f.PASSTHRU_MODE) {    // do not use sensors for correction, simple 2 channel mixing
-      servo[3] = (SERVODIR(3,1) * rcCommand[PITCH]) + (SERVODIR(3,2) * rcCommand[ROLL]);
-      servo[4] = (SERVODIR(4,1) * rcCommand[PITCH]) + (SERVODIR(4,2) * rcCommand[ROLL]);
-    } else {                  // use sensors to correct (gyro only or gyro+acc according to aux1/aux2 configuration
-      servo[3] = (SERVODIR(3,1) * axisPID[PITCH])   + (SERVODIR(3,2) * axisPID[ROLL]);
-      servo[4] = (SERVODIR(4,1) * axisPID[PITCH])   + (SERVODIR(4,2) * axisPID[ROLL]);
-    }
-    servo[3] += get_middle(3);
-    servo[4] += get_middle(4);
+    motor[0] = servo[7];	
+
+	  // propotional Servo patch By Universam   http://www.multiwii.com/forum/viewtopic.php?f=7&t=6132
+	  for (i=3; i<=4; i++) {
+        if (f.PASSTHRU_MODE) {    // do not use sensors for correction, simple 2 channel mixing
+          servo[i] = (SERVODIR(i,1) * rcCommand[PITCH])*PITCHRATE + (SERVODIR(i,2) * rcCommand[ROLL])*ROLLRATE;
+        } else {                  // use sensors to correct (gyro only or gyro+acc according to aux1/aux2 configuration
+          servo[i] = (SERVODIR(i,1) * axisPID[PITCH])*PITCHRATE   + (SERVODIR(i,2) * axisPID[ROLL])*ROLLRATE;
+        }
+        // depending on the side the left path to max/min is different so taking that in account for propotional path
+        servo[i] = (int32_t) servo[i]*(servo[i]>=0 ? conf.servoConf[i].max-conf.servoConf[i].middle:conf.servoConf[i].middle-conf.servoConf[i].min)/500; 
+        servo[i] += get_middle(i);
+      }	
+  #elif defined(QUADWING)
+    /*****************************             FLYING QUADWING                **************************************/
+      int16_t rc_Input[2];      
+      if (!f.PASSTHRU_MODE){ // if (rcData[AUX2] >1700)        
+// Quad Mode No servo control
+	rc_Input[0] = axisPID[PITCH]*0;//PITCHRATE;  // Or set *zero to disable
+	rc_Input[1] = axisPID[YAW]  *0;//ROLLRATE;    // Or set *zero to disable
+        motor[0] = PIDMIX(-1,+1,-1); //REAR_R
+        motor[1] = PIDMIX(-1,-1,+1); //FRONT_R
+        motor[2] = PIDMIX(+1,+1,+1); //REAR_L
+        motor[3] = PIDMIX(+1,-1,-1); //FRONT_L
+	}else{
+// Plane Mode  Only RC controll on motors & servos
+	rc_Input[0] = rcCommand[PITCH]*PITCHRATE;
+	rc_Input[1] = rcCommand[ROLL] *ROLLRATE;
+        for (i=0; i<4; i++) {  motor[i] = rcCommand[THROTTLE]; }
+	}
+	
+	if (f.PASSTHRU_MODE) { // Disable servos
+	  rc_Input[0] = 0;
+	  rc_Input[1] = 0;
+	}
+	
+	  // propotional Servo patch By Universam   http://www.multiwii.com/forum/viewtopic.php?f=7&t=6132
+	  for (i=3; i<=4; i++) {
+        servo[i] = (SERVODIR(i,1) * rc_Input[i-3]) + (SERVODIR(i,2) * rc_Input[i-3]);
+        // depending on the side the left path to max/min is different so taking that in account for propotional path
+        servo[i] = (int32_t) servo[i]*(servo[i]>=0 ? conf.servoConf[i].max-conf.servoConf[i].middle:conf.servoConf[i].middle-conf.servoConf[i].min)/500; 
+        servo[i] += get_middle(i);
+      }
+	// mode is 1 or 0
+      motor[0] = PIDMIX(-1*mode,+1*mode,-1*mode); //REAR_R
+      motor[1] = PIDMIX(-1*mode,-1*mode,+1*mode); //FRONT_R
+      motor[2] = PIDMIX(+1*mode,+1*mode,+1*mode); //REAR_L
+      motor[3] = PIDMIX(+1*mode,-1*mode,-1*mode); //FRONT_L	
+	
   #elif defined( AIRPLANE )
     /*****************************               AIRPLANE                **************************************/
     // servo[7] is programmed with safty features to avoid motorstarts when ardu reset..
@@ -1255,6 +1294,23 @@ void mixTable() {
       int8_t flapinv[2] = FLAPPERON_INVERT;
       static int16_t F_Endpoint[2] = FLAPPERON_EP;
       int16_t flap =MIDRC-constrain(rcData[FLAPPERONS],F_Endpoint[0],F_Endpoint[1]);
+	  
+// AutoFlaperons Test	 http://www.rcgroups.com/forums/showpost.php?p=30695660&postcount=647
+#if  defined(GPS) && defined(AUTOFLAPS)
+      if (f.GPS_FIX){ // we have valid speed info
+    	int16_t maxflap = MIDRC - F_Endpoint[0];
+    	if (f.FS_MODE)	{ // We have a Failsafe situation
+    	  flap = map(GPS_speed, AUTOFLAPS_V_EXTENDED,AUTOFLAPS_V_RETRACTED, maxflap, 0 );
+    	  flap = constrain(flap,0, maxflap);
+		}
+		else if (flap<0 && (f.ANGLE_MODE || f.HORIZON_MODE)) { // if TX set to upper half extension, activates AutoFlap on assisted modes
+       	  maxflap = ((int32_t) maxflap * -flap) / 500; //changing the sign, making positive - respecting Flap channel
+    	  flap = map(GPS_speed, AUTOFLAPS_V_EXTENDED,AUTOFLAPS_V_RETRACTED, maxflap, 0 );
+    	  flap = constrain(flap,0, maxflap); 
+		}
+	  }
+#endif // AutoFlaperons Test
+	  
       static int16_t slowFlaps= flap;
       #if defined(FLAPSPEED)
         if (slowFlaps < flap ){slowFlaps+=FLAPSPEED;}else if(slowFlaps > flap){slowFlaps-=FLAPSPEED;}
@@ -1272,6 +1328,23 @@ void mixTable() {
       int16_t lFlap = get_middle(2);
       lFlap = constrain(lFlap, conf.servoConf[2].min, conf.servoConf[2].max);
       lFlap = MIDRC - lFlap;
+	  
+// AutoFlaps Test	 http://www.rcgroups.com/forums/showpost.php?p=30695660&postcount=647
+#if  defined(GPS) && defined(AUTOFLAPS)
+        if (f.GPS_FIX){ // we have valid speed info
+    	  int16_t maxflap = MIDRC - F_Endpoint[0];
+    	  if (f.FS_MODE){ // We have a Failsafe situation
+    		lFlap = map(GPS_speed, AUTOFLAPS_V_EXTENDED,AUTOFLAPS_V_RETRACTED, maxflap, 0 );
+    		lFlap = constrain(lFlap,0, maxflap);
+		  }
+    	  else if (lFlap<0 && (f.ANGLE_MODE || f.HORIZON_MODE)) { // if TX set to upper half extension, activates AutoFlap on assisted modes
+       		maxflap = ((int32_t) maxflap * -lFlap) / 500; //changing the sign, making positive - respecting Flap channel
+       		lFlap = map(GPS_speed, AUTOFLAPS_V_EXTENDED,AUTOFLAPS_V_RETRACTED, maxflap, 0 );
+       		lFlap = constrain(lFlap,0, maxflap); 
+		  }
+		}
+#endif // AutoFlaps Test
+
       static int16_t slow_LFlaps= lFlap;
       #if defined(FLAPSPEED)
         if (slow_LFlaps < lFlap ){slow_LFlaps+=FLAPSPEED;} else if(slow_LFlaps > lFlap){slow_LFlaps-=FLAPSPEED;}
@@ -1281,23 +1354,45 @@ void mixTable() {
       servo[2] = ((int32_t)conf.servoConf[2].rate * slow_LFlaps)/100L;
       servo[2] += MIDRC;
     #endif
+//    int16_t inputCH[3];
+//    for(i=0;i<3;i++) {
+//      if(f.PASSTHRU_MODE){
+//      inputCH[i]=rcCommand[i];}
+//    else{
+//      inputCH[i]=axisPID[i];}      
+//    }
+//      servo[3] = (int32_t) inputCH[ROLL] * (500 - (inputCH[ROLL]<0 ? -flapperons[0]: flapperons[0])) / 500 + flapperons[0];     //   Wing 1
+//      servo[4] = (int32_t) inputCH[ROLL] * (500 - (inputCH[ROLL]<0 ? -flapperons[1]: flapperons[1])) / 500 + flapperons[1];     //   Wing 2
+//      servo[5] = inputCH[YAW];                      //   Rudder
+//      servo[6] = inputCH[PITCH]; 
 
     if(f.PASSTHRU_MODE){   // Direct passthru from RX
-      servo[3] = rcCommand[ROLL] + flapperons[0];     //   Wing 1
-      servo[4] = rcCommand[ROLL] + flapperons[1];     //   Wing 2
+      servo[3] = (int32_t) rcCommand[ROLL] * (500 - (rcCommand[ROLL]<0 ? -flapperons[0]: flapperons[0])) / 500 + flapperons[0];     //   Wing 1
+      servo[4] = (int32_t) rcCommand[ROLL] * (500 - (rcCommand[ROLL]<0 ? -flapperons[1]: flapperons[1])) / 500 + flapperons[1];     //   Wing 2
       servo[5] = rcCommand[YAW];                      //   Rudder
       servo[6] = rcCommand[PITCH];                    //   Elevator
     }else{
       // Assisted modes (gyro only or gyro+acc according to AUX configuration in Gui
-      servo[3] = axisPID[ROLL] + flapperons[0];   //   Wing 1
-      servo[4] = axisPID[ROLL] + flapperons[1];   //   Wing 2
+      servo[3] = (int32_t) axisPID[ROLL] * (500 - (axisPID[ROLL]<0 ? -flapperons[0]: flapperons[0])) / 500 + flapperons[0];     //   Wing 1
+      servo[4] = (int32_t) axisPID[ROLL] * (500 - (axisPID[ROLL]<0 ? -flapperons[1]: flapperons[1])) / 500 + flapperons[1];     //   Wing 2
       servo[5] = axisPID[YAW];                    //   Rudder
       servo[6] = axisPID[PITCH];                  //   Elevator
     }
     for(i=3;i<7;i++) {
-      servo[i]  = ((int32_t)conf.servoConf[i].rate * servo[i])/100L;  // servo rates
-      servo[i] += get_middle(i);
+  
+	    // propotional Servo patch By Universam  http://www.multiwii.com/forum/viewtopic.php?f=7&t=6132
+        // here we honor the servo rate and reversing! if rate is 100 we get full propotional path
+        int32_t path = (int32_t)conf.servoConf[i].rate * servo[i]; 
+        // depending on the side the left path to max/min is different so taking that in account for propotional path
+        servo[i] = (path*(path>=0 ? conf.servoConf[i].max-conf.servoConf[i].middle:conf.servoConf[i].middle-conf.servoConf[i].min))/(100L*500L);  
+        servo[i] += get_middle(i);
     }
+ /*************************************************************/
+// TODO Remove QuickFix!
+#if defined PATRIKE
+      servo[5]  = servo[3];  // QuickFix for servoPins!...... !!!!
+#endif
+/*************************************************************/    
   #elif defined( SINGLECOPTER )
     /***************************          Single & DualCopter          ******************************/
     // Singlecopter
@@ -1565,12 +1660,15 @@ void mixTable() {
       if (maxMotor > MAXTHROTTLE) // this is a way to still have good gyro corrections if at least one motor reaches its max.
         motor[i] -= maxMotor - MAXTHROTTLE;
       motor[i] = constrain(motor[i], conf.minthrottle, MAXTHROTTLE);
-      if ((rcData[THROTTLE] < MINCHECK) && !f.BARO_MODE)
+      if ((rcData[THROTTLE] < MINCHECK) && !f.BARO_MODE){
       #ifndef MOTOR_STOP
         motor[i] = conf.minthrottle;
       #else
         motor[i] = MINCOMMAND;
+	  f.MOTORS_STOPPED=1;
       #endif
+      }else{
+        f.MOTORS_STOPPED=0;}
       if (!f.ARMED)
         motor[i] = MINCOMMAND;
     }

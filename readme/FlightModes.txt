@@ -1,0 +1,70 @@
+
+=======================================================
+Information about settings and modes for GPS fixedwing
+=======================================================
+
+The code can be used on ATmega and ATmega 328P
+Nano/Micro/Leonardo FC is too small to fit the Navigation code.
+
+Supported models
+* FLYING_WING
+* AIRPLANE
+
+NEW Function
+  Keep current Heading.(Cruise mode.)
+  Activate CRUISE.
+  The plane will set a Hold Position in the current Heading and altitude.
+  Distance to the point will be set by SAFE_WP_DISTANCE.
+  If AP_MODE is used it will be moved every time you move sticks.
+  Remember to change FENCE_DISTANCE
+
+Some magic for running ATmega 328P processors
+*********************************************
+  Non MEGA boards is detected Automatically and activates a SLIM_WING
+  Disables MAG, BARO and some code To fit in Promini
+
+In MissionPlanner this Modes is supported but need to be verified.
+  MISSION_WAYPOINT  - OK
+  MISSION_JUMP      - ?
+  MISSION_RTH       - ?
+
+Modes not supported by SLIM_WING and will result in PosHold.
+Should work on Mega FC's but needs to be verified.
+  MISSION_HOLD_TIME
+  MISSION_HOLD_UNLIM
+  MISSION_SET_POI   ( Totally crazy function on planes... )
+  MISSION_LAND
+    Will put the plane in Poshold and descend.(Not tested by should work...)
+    Needs another Sequence for a proper Airplane landing.
+
+Other Parameters that also controls your plane.
+*******************************************
+Setings available in EOS Wingui
+http://eosbandi.com/downloads/
+And in config.h
+*******************************************
+
+Starts a RTH if plane fly away.  set to zero to disable
+Abort by Manually switching to RTH on TX once
+  FENCE_DISTANCE    600
+
+If distance to next waypoint is to far Mission is aborted.
+  SAFE_WP_DISTANCE  500
+
+How small Radius can we hit? (100 is OK with a 10Hz gps)
+  GPS_WP_RADIUS     200  // Cm Radius
+  (Modified to dynamic size for FixedWing based on speed)
+
+Max allowed navigation altitude ABS limit
+  MAX_NAV_ALTITUDE  100
+
+RTH minimum altitude during RTH
+  RTH_ALTITUDE       50
+
+Move the PosHold if Roll/Elevator sticks is moved. (Also in cruise)
+#define AP_MODE      40
+====================================================================
+
+True Airspeed.
+Analogue Airspeed sensor
+http://hobbyking.com/hobbyking/store/__67371__HK_Pilot_Analog_Air_Speed_Sensor_And_Pitot_Tube_Set.html?strSearch=pitot
