@@ -801,6 +801,9 @@ void Read_OpenLRS_RC() {
       rcData[AUX2] = Servo_Buffer[5]; 
       rcData[AUX3] = Servo_Buffer[6]; 
       rcData[AUX4] = Servo_Buffer[7];  
+      #if defined(FAILSAFE)
+        if(failsafeCnt > 20) failsafeCnt -= 20; else failsafeCnt = 0;   // Valid frame, clear FailSafe counter
+      #endif
     }
     #if (FREQUENCY_HOPPING==1)
       Hopping(); //Hop to the next frequency

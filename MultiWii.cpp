@@ -303,10 +303,10 @@ conf_t conf;
 // **********************
 // GPS common variables
 // **********************
-  int16_t  GPS_angle[2] = { 0, 0};                      // the angles that must be applied for GPS correction
+  int16_t  GPS_angle[3] = { 0, 0, 0};                      // the angles that must be applied for GPS correction
   int32_t  GPS_coord[2];
-  int32_t  GPS_home[2];
-  int32_t  GPS_hold[2];
+  int32_t  GPS_home[3];
+  int32_t  GPS_hold[3];
   uint8_t  GPS_numSat;
   uint16_t GPS_distanceToHome;                          // distance to home  - unit: meter
   int16_t  GPS_directionToHome;                         // direction to home - unit: degree
@@ -339,13 +339,27 @@ void annexCode() { // this code is excetuted at each loop and won't interfere wi
   uint8_t axis,prop1,prop2;
 
   // PITCH & ROLL only dynamic PID adjustemnt,  depending on throttle value
-  prop2 = 128; // prop2 was 100, is 128 now
+ /*
+ //Original dynThrPID code
+ prop2 = 128; // prop2 was 100, is 128 now
   if (rcData[THROTTLE]>1500) { // breakpoint is fix: 1500
     if (rcData[THROTTLE]<2000) {
       prop2 -=  ((uint16_t)conf.dynThrPID*(rcData[THROTTLE]-1500)>>9); //  /512 instead of /500
     } else {
       prop2 -=  conf.dynThrPID;
     }
+  }
+  */
+  /*
+  Test for navigation
+  Use dynThrPID also when navigating with AutoThrottle.
+  */
+  prop2 = 128; // prop2 was 100, is 128 now   
+  uint16_t pidthro;
+  if(nav_mode >0 ) {pidthro =rcCommand[THROTTLE];}else{ pidthro=rcData[THROTTLE]; }
+  if (pidthro>1500) { // breakpoint is fix: 1500
+    if (pidthro<2000) { prop2 -=  ((uint16_t)conf.dynThrPID*(pidthro-1500)>>9);
+    } else { prop2 -=  conf.dynThrPID;}
   }
 
   for(axis=0;axis<3;axis++) {
@@ -490,7 +504,19 @@ void annexCode() { // this code is excetuted at each loop and won't interfere wi
       f.ACC_CALIBRATED = 1;
     }
   }
-
+  
+  /************************************************/
+  // For OSD  !! TEST !! Show values Based on GPS
+  if (!BARO) alt.EstAlt = (GPS_altitude - GPS_home[ALT])*100;
+  if (!MAG) {
+    att.heading = GPS_ground_course/10; 
+    
+// Wrap GPS_ground_course 180 for Gui & OSD
+    if (att.heading <= - 180) att.heading += 360;
+    if (att.heading >=  180) att.heading -= 360;
+  }
+  /************************************************/
+  
   #if !(defined(SPEKTRUM) && defined(PROMINI))  //Only one serial port on ProMini.  Skip serial com if Spektrum Sat in use. Note: Spek code will auto-call serialCom if GUI data detected on serial0.
     #if defined(GPS_PROMINI)
       if(GPS_Enable == 0) {serialCom();}
@@ -806,7 +832,7 @@ void loop () {
       if ( failsafeCnt > (5*FAILSAFE_DELAY) && f.ARMED) {                  // Stabilize, and set Throttle to specified level
         for(i=0; i<3; i++) rcData[i] = MIDRC;                               // after specified guard time after RC signal is lost (in 0.1sec)
         rcData[THROTTLE] = conf.failsafe_throttle;
-        if (failsafeCnt > 5*(FAILSAFE_DELAY+FAILSAFE_OFF_DELAY)) {          // Turn OFF motors after specified Time (in 0.1sec)
+        if ((failsafeCnt > 5*(FAILSAFE_DELAY+FAILSAFE_OFF_DELAY)) && !f.FAILSAFE_RTH_ENABLE) {  // Turn OFF motors after specified Time (in 0.1sec)
           go_disarm();     // This will prevent the copter to automatically rearm if failsafe shuts it down and prevents
           f.OK_TO_ARM = 0; // to restart accidentely by just reconnect to the tx - you will have to switch off first to rearm
         }
@@ -849,7 +875,7 @@ void loop () {
       }
     }
     if(rcDelayCommand == 20) {
-      if(f.ARMED) {                   // actions during armed
+      if(f.ARMED && STICK_DISARM) {                   // actions during armed
         #ifdef ALLOW_ARM_DISARM_VIA_TX_YAW
           if (conf.activate[BOXARM] == 0 && rcSticks == THR_LO + YAW_LO + PIT_CE + ROL_CE) go_disarm();    // Disarm via YAW
         #endif
@@ -976,10 +1002,14 @@ void loop () {
         if (!f.ANGLE_MODE) {
           errorAngleI[ROLL] = 0; errorAngleI[PITCH] = 0;
           f.ANGLE_MODE = 1;
-        }  
+          #if FAILSAFE_RTH
+            if (failsafeCnt > 5*FAILSAFE_DELAY && GPS) f.FAILSAFE_RTH_ENABLE = 1;
+          #endif
+        }
       } else {
         // failsafe support
         f.ANGLE_MODE = 0;
+        f.FAILSAFE_RTH_ENABLE = 0;
       }
       if ( rcOptions[BOXHORIZON] ) {
         f.ANGLE_MODE = 0;
@@ -1056,13 +1086,17 @@ void loop () {
     #if GPS
       static uint8_t GPSNavReset = 1;
       if (f.GPS_FIX && GPS_numSat >= 5 ) {
-        if (rcOptions[BOXGPSHOME]) {  // if both GPS_HOME & GPS_HOLD are checked => GPS_HOME is the priority
-          if (!f.GPS_HOME_MODE)  {
+        if (rcOptions[BOXGPSHOME] || f.FAILSAFE_RTH_ENABLE ) {  // if both GPS_HOME & GPS_HOLD are checked => GPS_HOME is the priority
+          if (!f.GPS_HOME_MODE){
             f.GPS_HOME_MODE = 1;
             f.GPS_HOLD_MODE = 0;
             GPSNavReset = 0;
             GPS_set_next_wp(&GPS_home[LAT],&GPS_home[LON]);
-            nav_mode    = NAV_MODE_WP;
+            //nav_mode    = NAV_MODE_WP;
+            //GPS_hold[ALT] = GPS_altitude;
+            GPS_hold[ALT] = alt.EstAlt/100;
+            nav_mode       = NAV_MODE_WP;
+            f.CLIMBOUT_FW =1 ;
           }
         } else {
           f.GPS_HOME_MODE = 0;
@@ -1074,6 +1108,9 @@ void loop () {
               GPS_hold[LON] = GPS_coord[LON];
               GPS_set_next_wp(&GPS_hold[LAT],&GPS_hold[LON]);
               nav_mode = NAV_MODE_POSHOLD;
+              //GPS_hold[ALT] = GPS_altitude;
+              GPS_hold[ALT] = alt.EstAlt/100;
+              f.CLIMBOUT_FW = 0 ;
             }
           } else {
             f.GPS_HOLD_MODE = 0;
@@ -1081,6 +1118,7 @@ void loop () {
             if (GPSNavReset == 0 ) {
               GPSNavReset = 1;
               GPS_reset_nav();
+              f.CLIMBOUT_FW = 0 ;
             }
           }
         }
@@ -1092,9 +1130,29 @@ void loop () {
     #endif
     
     #if defined(FIXEDWING) || defined(HELICOPTER)
-      if (rcOptions[BOXPASSTHRU]) {f.PASSTHRU_MODE = 1;}
+      if (rcOptions[BOXPASSTHRU] && !f.FAILSAFE_RTH_ENABLE ) {f.PASSTHRU_MODE = 1;}
       else {f.PASSTHRU_MODE = 0;}
     #endif
+                
+      #if defined(FIXEDWING) && defined(FAILSAFE)
+      if ( failsafeCnt > (5*FAILSAFE_DELAY) ){
+           f.PASSTHRU_MODE = 0;
+           #if ACC
+             f.ANGLE_MODE = 1;
+           #endif  
+           for(i=0; i<3; i++) rcData[i] = MIDRC;
+           rcData[THROTTLE] = conf.failsafe_throttle;
+           if(!f.GPS_FIX && GPS_numSat <= 5)
+           {
+             // No GPS FIX Disable FailsafeRTH and Force a soft left turn.
+             f.FAILSAFE_RTH_ENABLE = 0;
+             rcData[ROLL]=MIDRC-50;
+           }
+        }
+        else {
+          f.FAILSAFE_RTH_ENABLE = 0;
+        }
+     #endif
  
   } else { // not in rc loop
     static uint8_t taskOrder=0; // never call all functions in the same loop, to avoid high delay spikes
@@ -1202,20 +1260,23 @@ void loop () {
   
   #if GPS
     if ( (f.GPS_HOME_MODE || f.GPS_HOLD_MODE) && f.GPS_FIX_HOME ) {
+      #if !defined(FIXEDWING) 
       float sin_yaw_y = sin(att.heading*0.0174532925f);
       float cos_yaw_x = cos(att.heading*0.0174532925f);
-      #if defined(NAV_SLEW_RATE)     
-        nav_rated[LON]   += constrain(wrap_18000(nav[LON]-nav_rated[LON]),-NAV_SLEW_RATE,NAV_SLEW_RATE);
-        nav_rated[LAT]   += constrain(wrap_18000(nav[LAT]-nav_rated[LAT]),-NAV_SLEW_RATE,NAV_SLEW_RATE);
-        GPS_angle[ROLL]   = (nav_rated[LON]*cos_yaw_x - nav_rated[LAT]*sin_yaw_y) /10;
-        GPS_angle[PITCH]  = (nav_rated[LON]*sin_yaw_y + nav_rated[LAT]*cos_yaw_x) /10;
-      #else 
         GPS_angle[ROLL]   = (nav[LON]*cos_yaw_x - nav[LAT]*sin_yaw_y) /10;
         GPS_angle[PITCH]  = (nav[LON]*sin_yaw_y + nav[LAT]*cos_yaw_x) /10;
+
+/***************** Start of FixedWing Nav *****************/
+      #else   // Navigation with Planes
+// Navigation with Planes Separated from MWii Tab for Devlopment. 
+// Code is Moved to FX_Nav TAB.
+        FW_NAV();
       #endif
+/***************** End of FixedWing Nav *****************/
     } else {
       GPS_angle[ROLL]  = 0;
       GPS_angle[PITCH] = 0;
+      GPS_angle[YAW]   = 0;
     }
   #endif
 

@@ -60,16 +60,16 @@
     //#define MINTHROTTLE 1120 // for Super Simple ESCs 10A
     //#define MINTHROTTLE 1064 // special ESC (simonk)
     //#define MINTHROTTLE 1050 // for brushed ESCs like ladybird
-    #define MINTHROTTLE 1150 // (*) (**)
+    #define MINTHROTTLE 950 // (*) (**)
 
   /****************************    Motor maxthrottle    *******************************/
     /* this is the maximum value for the ESCs at full power, this value can be increased up to 2000 */
-    #define MAXTHROTTLE 1850
+    #define MAXTHROTTLE 2000
 
   /****************************    Mincommand          *******************************/
     /* this is the value for the ESCs when they are not armed
        in some cases, this value must be lowered down to 900 for some specific ESCs, otherwise they failed to initiate */
-    #define MINCOMMAND  1000
+    #define MINCOMMAND  950
 
   /**********************************  I2C speed for old WMP config (useless config for other sensors)  *************/
     #define I2C_SPEED 100000L     //100kHz normal mode, this value must be used for a genuine WMP
@@ -233,6 +233,11 @@
      * In most cases one of the two options to arm/disarm via TX stick is sufficient */
     #define ALLOW_ARM_DISARM_VIA_TX_YAW
     //#define ALLOW_ARM_DISARM_VIA_TX_ROLL
+    
+    // Disable the risk to disarm in flight with Sticks.
+    // It's still possible to Disarm with AUX switch
+    // Only Active on Planes
+    //#define DISABLE_STICK_DISARM
 
     /********************************    SERVOS      *********************************/
     /* info on which servos connect where and how to setup can be found here
@@ -256,6 +261,11 @@
     // trigger interval can be changed via (*GUI*) or via AUX channel
     //#define CAMTRIG
     #define CAM_TIME_HIGH 1000   // the duration of HIGH state servo expressed in ms
+
+  /***********************          Flying Wing                    ***********************/
+    // Throw Per Axis on servos
+	#define ROLLRATE 0.5
+	#define PITCHRATE 0.5
 
   /***********************          Airplane                       ***********************/
     //#define USE_THROTTLESERVO // For use of standard 50Hz servo on throttle.
@@ -572,7 +582,7 @@
        PITCH, ROLL and YAW is centered and THROTTLE is set to FAILSAFE_THROTTLE value. You must set this value to descending about 1m/s or so
        for best results. This value is depended from your configuration, AUW and some other params.  Next, after FAILSAFE_OFF_DELAY the copter is disarmed, 
        and motors is stopped. If RC pulse coming back before reached FAILSAFE_OFF_DELAY time, after the small quard time the RC control is returned to normal. */
-    //#define FAILSAFE                                // uncomment  to activate the failsafe function
+    #define FAILSAFE                                // uncomment  to activate the failsafe function
     #define FAILSAFE_DELAY     10                     // Guard time for failsafe activation after signal lost. 1 step = 0.1sec - 1sec in example
     #define FAILSAFE_OFF_DELAY 200                    // Time for Landing before motors stop in 0.1sec. 1 step = 0.1sec - 20sec in example
     #define FAILSAFE_THROTTLE  (MINTHROTTLE + 200)    // (*) Throttle level used for landing - may be relative to MINTHROTTLE - as in this case
@@ -690,7 +700,7 @@
        Convert the degree+minutes into decimal degree by ==> degree+minutes*(1/60)
        Note the sign on declination it could be negative or positive (WEST or EAST) */
     //#define MAG_DECLINATION  3.96f              //For Budapest Hungary.
-    #define MAG_DECLINATION  0.0f   //(**)
+    #define MAG_DECLINATION  4.34f   //(**)
 
     #define GPS_LEAD_FILTER                      // Adds a forward predictive filterig to compensate gps lag. Code based on Jason Short's lead filter implementation
     

@@ -9,6 +9,13 @@
 
 #if GPS
 
+#if defined(FIXEDWING)
+  float NaverrorI,AlterrorI;
+  static int16_t lastAltDiff,lastNavDiff,SpeedBoost;
+  static int16_t AltHist[GPS_UPD_HZ]; // shift register
+  static int16_t NavDif[GPS_UPD_HZ];  // shift register
+#endif
+
 bool GPS_newFrame(char c);
 #if defined(NMEA)
   bool GPS_NMEA_newFrame(char c);
@@ -97,6 +104,7 @@ LeadFilter yLeadFilter;      // Lat  GPS lag filter
   PID_PARAM posholdPID_PARAM;
   PID_PARAM poshold_ratePID_PARAM;
   PID_PARAM navPID_PARAM;
+  PID_PARAM altPID_PARAM;
 
   typedef struct PID_ {
     float   integrator; // integrator value
@@ -370,7 +378,6 @@ uint8_t GPS_NewData(void) {
         varptr = (uint8_t *)&GPS_ground_course;
         *varptr++ = i2c_readAck();
         *varptr   = i2c_readNak();
-
       } else {
         return 0; 
       }
@@ -452,7 +459,16 @@ uint8_t GPS_Compute(void) {
     }
 
     //calculate the current velocity based on gps coordinates continously to get a valid speed at the moment when we start navigating
-    GPS_calc_velocity();        
+    GPS_calc_velocity();  
+
+    if ((FENCE_DISTANCE > 0) && (FENCE_DISTANCE < GPS_distanceToHome) && (!f.GPS_HOME_MODE) ) {
+      f.GPS_HOME_MODE = 1;
+      f.GPS_HOLD_MODE = 0;
+      nav_mode = NAV_MODE_WP;
+      GPS_set_next_wp(&GPS_home[LAT],&GPS_home[LON]);
+      GPS_hold[ALT] = alt.EstAlt/100;
+      f.CLIMBOUT_FW =1 ;
+    }
 
     if (f.GPS_HOLD_MODE || f.GPS_HOME_MODE){    //ok we are navigating 
       //do gps nav calculations here, these are common for nav and poshold  
@@ -462,6 +478,9 @@ uint8_t GPS_Compute(void) {
       #else
         GPS_distance_cm_bearing(&GPS_coord[LAT],&GPS_coord[LON],&GPS_WP[LAT],&GPS_WP[LON],&wp_distance,&target_bearing);
         GPS_calc_location_error(&GPS_WP[LAT],&GPS_WP[LON],&GPS_coord[LAT],&GPS_coord[LON]);
+      #endif
+	    #if defined(FIXEDWING)
+        nav_mode = NAV_MODE_WP; // Planes always navigate in Wp mode.
       #endif
       switch (nav_mode) {
         case NAV_MODE_POSHOLD: 
@@ -500,7 +519,7 @@ void GPS_reset_home_position(void) {
     GPS_home[LON] = GPS_coord[LON];
     GPS_calc_longitude_scaling(GPS_coord[LAT]);  //need an initial value for distance and bearing calc
     nav_takeoff_bearing = att.heading;             //save takeoff heading
-    //Set ground altitude
+    GPS_home[ALT] = GPS_altitude;  //Set ground altitude
     f.GPS_FIX_HOME = 1;
   }
 }
@@ -517,6 +536,12 @@ void GPS_reset_nav(void) {
     reset_PID(&navPID[i]);
     nav_mode = NAV_MODE_NONE;
   }
+  #if defined(FIXEDWING)
+    NaverrorI=0;
+    AlterrorI=0;
+    lastAltDiff=0;lastNavDiff=0;;SpeedBoost=0;
+    for(uint8_t i=0;i <GPS_UPD_HZ;i++){ AltHist[i] = 0; NavDif[i] =0;};
+  #endif
 }
 
 //Get the relevant P I D values and set the PID controllers 
@@ -534,6 +559,12 @@ void GPS_set_pids(void) {
   navPID_PARAM.kI   = (float)conf.pid[PIDNAVR].I8/100.0;
   navPID_PARAM.kD   = (float)conf.pid[PIDNAVR].D8/1000.0;
   navPID_PARAM.Imax = POSHOLD_RATE_IMAX * 100;
+	
+  #ifdef FIXEDWING
+    altPID_PARAM.kP   = (float)conf.pid[PIDALT].P8/10.0;
+    altPID_PARAM.kI   = (float)conf.pid[PIDALT].I8/100.0;
+    altPID_PARAM.kD   = (float)conf.pid[PIDALT].D8/1000.0;
+  #endif	
 }
 
 //It was moved here since even i2cgps code needs it
@@ -894,8 +925,8 @@ bool GPS_newFrame(char c) {
         else if (param == 9)                     {GPS_altitude = grab_fields(string,0);}  // altitude in meters added by Mis
       } else if (frame == FRAME_RMC) {
         if      (param == 7)                     {GPS_speed = ((uint32_t)grab_fields(string,1)*5144L)/1000L;}  //gps speed in cm/s will be used for navigation
-        else if (param == 8)                     {GPS_ground_course = grab_fields(string,1); }                 //ground course deg*10 
-      }
+        else if (param == 8)                     {GPS_ground_course = grab_fields(string,1); }                 //ground course deg*10
+    }
       param++; offset = 0;
       if (c == '*') checksum_param=1;
       else parity ^= c;
@@ -1271,4 +1302,219 @@ restart:
 
 #endif //SERIAL GPS
 
+#if defined(FIXEDWING)
+void FW_NAV(){
+  
+// Navigation with Planes under Development.
+
+  int16_t GPS_Heading = GPS_ground_course; // Store current bearing
+  int16_t Current_Heading; // Store current bearing
+  int16_t altDiff = 0 ;
+  int16_t RTH_Alt = conf.pid[PIDPOSR].D8;// conf.pid[PIDALT].D8;
+  int16_t delta[2] = {0,0}; // D-Term
+  static int16_t NAV_deltaSum = 0, ALT_deltaSum=0;
+  static int16_t  GPS_FwTarget = 0;   // Gps correction for Fixed wing
+  static int16_t  GPS_AltErr = 0;
+  static int16_t  NAV_Thro = 0;
+  int16_t TX_Thro = rcData[THROTTLE]; // Read and store Throttle pos.
+  
+  // Calculated Altitude over home in meters
+  //int16_t curr_Alt = GPS_altitude - GPS_home[ALT]; // GPS
+  int16_t curr_Alt = alt.EstAlt/100; // BARO
+  
+  //int16_t navTargetAlt = GPS_hold[ALT]-GPS_home[ALT]; // Diff from homeAlt.  
+
+// Handles ReSetting RTH alt if rth is enabled to low!  
+  //if(f.CLIMBOUT_FW && curr_Alt < RTH_Alt ) { GPS_hold[ALT]  =  GPS_home[ALT] + RTH_Alt;}  
+  if(f.CLIMBOUT_FW && GPS_hold[ALT] < RTH_Alt) { GPS_hold[ALT]  =  RTH_Alt; }
+  
+// Wrap GPS_Heading 1800
+  if (GPS_Heading > 1800)  GPS_Heading -= 3600;
+  if (GPS_Heading < -1800) GPS_Heading += 3600;
+  
+// Only use MAG if Mag and GPS_Heading aligns
+     #if MAG
+	   if(abs(att.heading -(GPS_Heading/10))>10 && GPS_speed >200) // GPS and MAG heading diff.
+         {Current_Heading = GPS_Heading/10;}else{Current_Heading = att.heading;}
+      #else
+        Current_Heading =GPS_Heading/10 ;
+      #endif
+
+// Calculate Navigation errors
+      GPS_FwTarget    = nav_bearing/100;
+      int16_t navDiff = GPS_FwTarget - Current_Heading;	// Navigation Error
+      //GPS_AltErr      = curr_Alt - navTargetAlt;        //  Altitude error Negative means you're to low
+      GPS_AltErr      = curr_Alt - GPS_hold[ALT];        //  Altitude error Negative means you're to low
+
+/************ NavTimer ************/
+  static uint32_t gpsTimer = 0;
+  static uint16_t gpsFreq = 1000/GPS_UPD_HZ;  // 5HZ 200ms DT
+
+  if( millis() - gpsTimer >= gpsFreq ){
+    gpsTimer = millis();
+
+
+// Throttle control
+   // Deadpan for throttle at correct Alt.
+      if (abs(GPS_AltErr) < 1){ NAV_Thro = CRUICETHROTTLE; }   // Just cruise along in deadpan.
+      else {
+// Add AltitudeError  and scale up with a factor to throttle
+        NAV_Thro=constrain(CRUICETHROTTLE - (GPS_AltErr *SCALER_THROTTLE) , IDLE_THROTTLE ,CLIMBTHROTTLE);
+      }
+
+// Reset Climbout Flag when Alt have been reached
+        if (f.CLIMBOUT_FW && GPS_AltErr >= 0 ){f.CLIMBOUT_FW = 0;}
+		
+// Climb out before RTH
+      if(f.GPS_HOME_MODE )
+      {
+        if(f.CLIMBOUT_FW)
+        {
+	        GPS_AltErr =  - (GPS_MAXCLIMB *10) ; // Max climbAngle
+          NAV_Thro = CLIMBTHROTTLE;            // Max Allowed Throttle
+	        if(curr_Alt < SAFE_NAV_ALT){ navDiff=0; }// Force climb with Level Wings below safe Alt
+        }
+		
+        if( (GPS_distanceToHome < SAFE_DECSCEND_ZONE )&& curr_Alt > SAFE_NAV_ALT){
+          // Start decend to correct RTH Alt.
+          //GPS_hold[ALT]  =  GPS_home[ALT] + RTH_Alt;
+          GPS_hold[ALT]  =  SAFE_NAV_ALT;
+          f.CLIMBOUT_FW = 0;
+        }
+      }
+
+// Always DISARM when Home is within 10 meters below if FC is in failsafe.
+      if( f.FAILSAFE_RTH_ENABLE ){
+        if( GPS_distanceToHome < SAFE_DECSCEND_ZONE) {
+          NAV_Thro = MINTHROTTLE;
+          f.CLIMBOUT_FW = 0 ;  // Abort Climbout
+          GPS_hold[ALT]  =  1; // Come down  
+          if(curr_Alt < 10) {
+            navDiff=0; // Force Level Wings;
+            f.ARMED = 0;
+          }
+        }
+        if(f.GPS_FIX && GPS_numSat >= 5 && GPS_speed < 100) { // Speed below 3.6 km/h
+          f.ARMED = 0;
+        }
+      }
+      
+      if(f.GPS_HOLD_MODE )
+      {
+        if(wp_distance < 20*100 && CIRCLE) navDiff=0;// Theoretical circle
+      }
+
+// Filtering of navDiff around home to stop nervous servos
+       if( GPS_distanceToHome <10 )navDiff*=0.1;
+	  
+// Wrap Heading 180
+      if (navDiff <= - 180) navDiff += 360; 
+      if (navDiff >= + 180) navDiff -= 360;
+      if (abs(navDiff) > 170) navDiff  = 175;          // Force a left turn.
+      
+/******************************
+PID for Navigating planes.
+******************************/
+    float NavDT ;
+    static uint32_t nav_loopT;
+    NavDT = (float)(millis() - nav_loopT)/ 1000;
+    nav_loopT = millis();
+/****************************************************************************************************/    
+// Altitude PID
+
+    if(abs(GPS_AltErr)<=3) AlterrorI*=NavDT;  // Remove I-Term in deadspan
+
+    GPS_AltErr*=10;	
+    AlterrorI += (GPS_AltErr * altPID_PARAM.kI) * NavDT;          // Acumulate I from PIDPOSR
+    AlterrorI =constrain(AlterrorI,-500,500);                     // limits I term influence
+
+    delta[0] = (GPS_AltErr - lastAltDiff);
+                lastAltDiff = GPS_AltErr;
+    if (abs(delta[0])>100) delta[0] = 0;
+					
+    for(uint8_t i=0;i <GPS_UPD_HZ;i++){ AltHist[i] = AltHist[i+1];}
+    AltHist[GPS_UPD_HZ-1]=delta[0];
+    
+// Store 1 sec history for D-term in shift register
+    ALT_deltaSum = 0; // Sum History
+    for(uint8_t i=0;i<GPS_UPD_HZ;i++){ ALT_deltaSum += AltHist[i]; }
+    
+    ALT_deltaSum = ( ALT_deltaSum * altPID_PARAM.kD) / NavDT; 
+    altDiff = GPS_AltErr * altPID_PARAM.kP ;  // Add P in Elevator compensation.
+    altDiff +=(AlterrorI);   // Add I
+/****************************************************************************************************/
+// Nav PID NAV
+    if(abs(navDiff)<=3) NaverrorI*=NavDT; // Remove I-Term in deadspan
+    navDiff*=10;
+
+    NaverrorI += (navDiff * navPID_PARAM.kI) *NavDT;
+    NaverrorI =constrain(NaverrorI,-500,500);
+    
+    delta[1] = (navDiff - lastNavDiff);
+                lastNavDiff = navDiff;
+    if (abs(delta[1])>100) delta[1] = 0;
+                
+// Store 1 sec history for D-term in shift register
+     for(uint8_t i=0;i < GPS_UPD_HZ;i++){ NavDif[i] = NavDif[i+1];}
+     NavDif[GPS_UPD_HZ-1]=delta[1];
+
+     NAV_deltaSum = 0; // Sum History
+     for(uint8_t i=0;i<GPS_UPD_HZ;i++){ NAV_deltaSum += NavDif[i]; }
+     
+     NAV_deltaSum = ( NAV_deltaSum *navPID_PARAM.kD )/ NavDT; // Add D
+     
+     navDiff *= navPID_PARAM.kP;  // Add P
+     navDiff += NaverrorI;        // Add I
+/****************************************************************************************************/
+
+/******* End of PID *******/
+
+// Limit outputs
+    GPS_angle[PITCH] = constrain(altDiff/10,-GPS_MAXCLIMB*10,GPS_MAXDIVE*10) + ALT_deltaSum;
+    GPS_angle[ROLL]  = constrain(navDiff/10,-GPS_MAXCORR*10, GPS_MAXCORR*10) + NAV_deltaSum;
+    GPS_angle[YAW]   = constrain(navDiff/10,-GPS_RUDDER*10,  GPS_RUDDER*10 ) + NAV_deltaSum;
+	  
+//***********************************************//	  
+// Elevator compensation depending on behaviour. //
+//***********************************************//	  
+  // Prevent stall with Disarmed motor  New TEST
+    if( f.MOTORS_STOPPED ){ GPS_angle[PITCH]=constrain(GPS_angle[PITCH],0, GPS_MAXDIVE*10); }
+
+  // Add elevator compared with rollAngle
+    GPS_angle[PITCH]-= ( abs(att.angle[ROLL]) * (ELEVATORCOMPENSATION /10)) /10;
+	  
+//***********************************************//	  
+// Throttle compensation depending on behaviour. //
+//***********************************************//	  
+  // Compensate throttle with pitch Angle
+   NAV_Thro -= constrain(att.angle[PITCH]* PITCH_COMP ,0 ,450 );
+   NAV_Thro  = constrain(NAV_Thro,IDLE_THROTTLE ,CLIMBTHROTTLE );
+
+  // Force the Plane move forward in headwind with SpeedBoost
+  #define GPS_MINSPEED  500  // 500= ~18km/h
+  #define I_TERM        0.1f
+  int16_t groundSpeed = GPS_speed;
+
+  int spDiff=(GPS_MINSPEED -groundSpeed)*I_TERM;
+  if(GPS_speed < GPS_MINSPEED-50 || GPS_speed > GPS_MINSPEED+50)SpeedBoost += spDiff;
+  SpeedBoost = constrain(SpeedBoost,0,500);
+  NAV_Thro += SpeedBoost;
+  
+//***********************************************//	  
+  }
+/******* End of NavTimer *******/
+
+// PassThru for throttle In AcroMode
+      if( (!f.ANGLE_MODE && !f.HORIZON_MODE) || ( f.PASSTHRU_MODE && !f.FAILSAFE_RTH_ENABLE ) ){
+         NAV_Thro = TX_Thro;
+         GPS_angle[PITCH] =0;
+         GPS_angle[ROLL]  =0;
+         GPS_angle[YAW]   =0;
+      }	  
+      rcCommand[THROTTLE] = NAV_Thro;
+      rcCommand[YAW] += GPS_angle[YAW];
+
+}
+/******* End of FixedWing Navigation *******/
+#endif // FIXEDWING
 #endif // GPS

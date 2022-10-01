@@ -1231,11 +1231,11 @@ void mixTable() {
     }
     motor[0] = servo[7];
     if (f.PASSTHRU_MODE) {    // do not use sensors for correction, simple 2 channel mixing
-      servo[3] = (SERVODIR(3,1) * rcCommand[PITCH]) + (SERVODIR(3,2) * rcCommand[ROLL]);
-      servo[4] = (SERVODIR(4,1) * rcCommand[PITCH]) + (SERVODIR(4,2) * rcCommand[ROLL]);
+      servo[3] = (SERVODIR(3,1) * rcCommand[PITCH])*PITCHRATE + (SERVODIR(3,2) * rcCommand[ROLL])*ROLLRATE;
+      servo[4] = (SERVODIR(4,1) * rcCommand[PITCH])*PITCHRATE + (SERVODIR(4,2) * rcCommand[ROLL])*ROLLRATE;
     } else {                  // use sensors to correct (gyro only or gyro+acc according to aux1/aux2 configuration
-      servo[3] = (SERVODIR(3,1) * axisPID[PITCH])   + (SERVODIR(3,2) * axisPID[ROLL]);
-      servo[4] = (SERVODIR(4,1) * axisPID[PITCH])   + (SERVODIR(4,2) * axisPID[ROLL]);
+      servo[3] = (SERVODIR(3,1) * axisPID[PITCH])*PITCHRATE   + (SERVODIR(3,2) * axisPID[ROLL])*ROLLRATE;
+      servo[4] = (SERVODIR(4,1) * axisPID[PITCH])*PITCHRATE   + (SERVODIR(4,2) * axisPID[ROLL])*ROLLRATE;
     }
     servo[3] += get_middle(3);
     servo[4] += get_middle(4);
@@ -1296,10 +1296,27 @@ void mixTable() {
       servo[5] = axisPID[YAW];                    //   Rudder
       servo[6] = axisPID[PITCH];                  //   Elevator
     }
+	
+	#if defined(VTAIL)  // Experimental
+	  if(f.PASSTHRU_MODE){   // Direct passthru from RX
+	  servo[5] = rcCommand[YAW]+rcCommand[PITCH]; //   Rudder
+      servo[6] = rcCommand[YAW]+rcCommand[PITCH]; //   Elevator
+	  }else{
+      servo[5] = axisPID[YAW]+axisPID[PITCH];     //   Rudder
+      servo[6] = axisPID[YAW]+axisPID[PITCH];     //   Elevator
+	  }
+	#endif
+	
     for(i=3;i<7;i++) {
       servo[i]  = ((int32_t)conf.servoConf[i].rate * servo[i])/100L;  // servo rates
       servo[i] += get_middle(i);
     }
+/*************************************************************/
+// TODO Remove QuickFix!
+#if defined PATRIKE
+      servo[5]  = servo[3];  // QuickFix for servoPins!...... !!!!
+#endif
+/*************************************************************/
   #elif defined( SINGLECOPTER )
     /***************************          Single & DualCopter          ******************************/
     // Singlecopter
@@ -1542,12 +1559,14 @@ void mixTable() {
       if (maxMotor > MAXTHROTTLE) // this is a way to still have good gyro corrections if at least one motor reaches its max.
         motor[i] -= maxMotor - MAXTHROTTLE;
       motor[i] = constrain(motor[i], conf.minthrottle, MAXTHROTTLE);
-      if ((rcData[THROTTLE] < MINCHECK) && !f.BARO_MODE)
-      #ifndef MOTOR_STOP
-        motor[i] = conf.minthrottle;
-      #else
-        motor[i] = MINCOMMAND;
-      #endif
+      if ((rcData[THROTTLE] < MINCHECK) && !f.BARO_MODE){
+        #ifndef MOTOR_STOP
+          motor[i] = conf.minthrottle;
+        #else
+	      motor[i] = MINCOMMAND;
+	      f.MOTORS_STOPPED=1;
+        #endif
+	  }else{f.MOTORS_STOPPED=0;}
       if (!f.ARMED)
         motor[i] = MINCOMMAND;
     }

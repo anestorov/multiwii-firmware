@@ -7,6 +7,34 @@
 #if COPTERTEST == 1
   #define QUADP
   #define WMP
+  
+#elif COPTERTEST == 100
+// Roman
+ #define FLYING_WING
+  #define MINCOMMAND  1000
+  #define MPU6050
+  #define FORCE_ACC_ORIENTATION(X, Y, Z)  {imu.accADC[ROLL]  =  -X; imu.accADC[PITCH]  = -Y; imu.accADC[YAW]  = Z;}
+  #define FORCE_GYRO_ORIENTATION(X, Y, Z) {imu.gyroADC[ROLL] = Y; imu.gyroADC[PITCH] =  -X; imu.gyroADC[YAW] = -Z;}
+  #define RCAUXPIN8
+  
+  #define OVERRIDE_BUZZERPIN_PINMODE          pinMode (A2, OUTPUT); // use A2 instead of d8
+  #define OVERRIDE_BUZZERPIN_ON               PORTC |= 1<<2       ; //PORTB |= 1;
+  #define OVERRIDE_BUZZERPIN_OFF              PORTC &= ~(1<<2)    ; //PORTB &= ~1;
+
+  #define MPU6050_LPF_20HZ
+  #define GYROCALIBRATIONFAILSAFE
+  
+  #define I2C_GPS
+  #define I2CPATCH   // Use Patched I2C GPS for FixedWing and OSD
+
+  #define BUZZER
+  #define RCOPTIONSBEEP    
+
+  #define VBAT
+  #define VBATSCALE   127
+  #define ALT_DEADSPAN
+  #define MOTOR_STOP
+  
 #elif COPTERTEST == 2
   #define FLYING_WING
   #define WMP
@@ -109,6 +137,86 @@
   #define ITG3200
   #define PID_CONTROLLER 2
   #define ESC_CALIB_CANNOT_FLY
+
+#elif COPTERTEST == 99
+// PatrikE Experimental
+// Settings for Fixedwing_RTH
+#define FAILSAFE
+//#define DISABLE_STICK_DISARM
+
+#define CRIUS_PE  // RadJet 800 
+//#define MONGOOSE1_0 // EZ-Hawk
+//#define MPU6050
+//#define FLYDUINO_MPU      //TESTBENCH 1280 simple
+//#define CRIUS_AIO_PRO_V1  //TESTBENCH 2560 Full IMU
+
+
+
+//#define I2C_GPS
+
+#define GPS_BAUD   115200
+#define NMEA
+
+#define OSD_SWITCH
+#define SERIAL_SUM_PPM         ROLL,PITCH,THROTTLE,YAW,AUX1,AUX2,AUX3,AUX4,8,9,10,11
+#define AIRPLANE
+//#define QUADX
+
+
+//#define USE_MSP_WP
+#define MOTOR_STOP
+#define MAXTHROTTLE 2000
+#define NO_FLASH_CHECK
+#define MAG_DECLINATION  3.6f
+  
+#if defined (FLYDUINO_MPU) || defined (MPU6050)
+// Simple TestBench
+//  #define GPS_PROMINI_SERIAL
+  #define GPS_SERIAL 2  //AIO
+//  #define GPS_SERIAL 3 // 1280
+  #define PPM_ON_THROTTLE
+//  #define I2C_GPS
+#endif
+  
+#if defined (CRIUS_AIO_PRO_V1)
+// CRIUS_AIO_PRO_V1 TestBench
+  #define PPM_ON_THROTTLE
+  #define GPS_SERIAL 2
+#endif
+
+#if defined (CRIUS_PE)
+#define CRIUS_SE
+#define ITG3200_LPF_20HZ
+// RadJet 800 setup
+  #define ROLLRATE 0.7
+  #define PITCHRATE 0.8
+  #undef AIRPLANE
+  #define FLYING_WING
+  #define GPS_PROMINI_SERIAL
+//  #define I2C_GPS
+#define  SERVO_MIN  {1020, 1020, 1020, 1020, 1020, 1020, 1020, 1020}
+#define  SERVO_MAX  {2000, 2000, 2000, 2000, 2000, 2000, 2000, 2000}
+#define  SERVO_MID  {1500, 1500, 1500, 1412, 1445, 1500, 1572, 1500}
+#define  FORCE_SERVO_RATES  {30, 30, 100, 0, 1, 100, 100, 100}
+#endif
+
+  #if defined (MONGOOSE1_0)
+// MONGOOSE1_0 in EZ-Hawk setup
+    #define FLAPPERONS    AUX4
+    #define GPS_PROMINI_SERIAL
+//    #define I2C_GPS
+    #define PATRIKE
+    #define FORCE_GYRO_ORIENTATION(X, Y, Z) {imu.gyroADC[ROLL] =  -X; imu.gyroADC[PITCH] = -Y; imu.gyroADC[YAW] = -Z;}
+    #define FORCE_ACC_ORIENTATION(Y, X, Z)  {imu.accADC[ROLL]  =  -X; imu.accADC[PITCH]  =  Y; imu.accADC[YAW]  =  Z;}
+    #define FORCE_MAG_ORIENTATION(X, Y, Z)  {imu.magADC[ROLL]  =   Y; imu.magADC[PITCH]  = -X; imu.magADC[YAW]  = -Z;}
+  
+    #define  SERVO_MIN  {1020, 1020, 1020, 1020, 1020, 1020, 1020, 1020}
+    #define  SERVO_MAX  {2000, 2000, 2000, 2000, 2000, 2000, 2000, 2000}
+    #define  SERVO_MID  {1500, 1500, 1500, 1500, 1550, 1500, 1572, 1500}
+    #define  FORCE_SERVO_RATES  {30, 30, 100, 89, 88, 100, 100, 100}
+  #endif
+
+
 #elif defined(COPTERTEST)
   #error "*** this test is not yet defined"
 #endif
@@ -135,7 +243,23 @@
 #define SERVO_RATES      {30,30,100,100,100,100,100,100}
 
 #if defined (AIRPLANE) || defined(FLYING_WING)
-  #define FIXEDWING
+  #define FIXEDWING  
+  #if defined (GPS_SERIAL) || defined(GPS_PROMINI_SERIAL) || defined(I2C_GPS)
+      #include "GPS.h"
+ // Settings Moved from gps.h   
+      #define GPS_UPD_HZ             5     // Set loop time for NavUpdate 5 Hz is enough
+      #define PITCH_COMP             0.5f  // Compensate throttle relative angle of attack
+      #define ELEVATORCOMPENSATION   100   // Compensate elevator with % of rollAngle
+      #define DONT_RESET_HOME_AT_ARM
+      #undef ONLYARMWHENFLAT
+       
+    #if defined (FAILSAFE)
+      #define FAILSAFE_RTH      1
+    #else  
+      #define FAILSAFE_RTH      0
+    #endif
+  #endif 
+  
 #endif
 
 #if defined(HELI_120_CCPM) || defined(HELI_90_DEG)
@@ -149,7 +273,11 @@
 #if defined(COPTER_WITH_SERVO) || defined(SERVO_TILT) || defined(GIMBAL) || defined(CAMTRIG) || defined(SERVO_MIX_TILT)
   #define SERVO
 #endif
-
+#if defined(DISABLE_STICK_DISARM) && defined(FIXEDWING)
+  #define STICK_DISARM 0
+#else
+  #define STICK_DISARM 1
+ #endif 
 #if defined(DYNBALANCE)
   #define DYNBAL 1
 #else
@@ -600,9 +728,10 @@
   #define SERVO_3_PINMODE            pinMode(33,OUTPUT); pinMode(46,OUTPUT); // CAM TRIG  - alt TILT_PITCH
   #define SERVO_3_PIN_HIGH           PORTC |= 1<<4;PORTL |= 1<<3;
   #define SERVO_3_PIN_LOW            PORTC &= ~(1<<4);PORTL &= ~(1<<3);
-  #define SERVO_4_PINMODE            pinMode (37, OUTPUT);                   // new       - alt TILT_ROLL
-  #define SERVO_4_PIN_HIGH           PORTC |= 1<<0;
-  #define SERVO_4_PIN_LOW            PORTC &= ~(1<<0);
+  #define SERVO_4_PINMODE            pinMode (37, OUTPUT);pinMode(7,OUTPUT); // new       - alt TILT_ROLL
+  #define SERVO_4_PIN_HIGH           PORTC |= 1<<0; PORTH |= 1<<4;
+  #define SERVO_4_PIN_LOW            PORTC &= ~(1<<0);PORTH &= ~(1<<4);
+
   #define SERVO_5_PINMODE            pinMode(6,OUTPUT);                      // BI LEFT
   #define SERVO_5_PIN_HIGH           PORTH |= 1<<3;
   #define SERVO_5_PIN_LOW            PORTH &= ~(1<<3);
@@ -632,12 +761,21 @@
   #define RX_SERIAL_PORT             0
 
   /* Unavailable pins on MONGOOSE1_0 */
-  #define BUZZERPIN_PINMODE          ; // D8
+// TODO
+//  #define BUZZERPIN_PINMODE          (A1, OUTPUT);
+//  #define BUZZERPIN_ON               PORTC |= (1<<1);
+//  #define BUZZERPIN_OFF              PORTC &= ~(1<<1);  
+  #define BUZZERPIN_PINMODE          ;
   #define BUZZERPIN_ON               ;
   #define BUZZERPIN_OFF              ;
+
   #define POWERPIN_PINMODE           ; // D12
   #define POWERPIN_ON                ;
   #define POWERPIN_OFF               ;
+// TODO
+//  #define STABLEPIN_PINMODE pinMode (A0, OUTPUT);
+//  #define STABLEPIN_ON              PORTC |= (1<<0);
+//  #define STABLEPIN_OFF             PORTC &= ~(1<<0);
   #define STABLEPIN_PINMODE          ; //
   #define STABLEPIN_ON               ;
   #define STABLEPIN_OFF              ; 
@@ -1678,7 +1816,7 @@
 #elif defined(HEX6H)
   #define MULTITYPE 18
 #elif defined(SINGLECOPTER)
-  #define MULTITYPE 20
+  #define MULTITYPE 21
   #define SERVO_RATES      {30,30,100,0,1,0,1,100}
 #elif defined(DUALCOPTER)
   #define MULTITYPE 20
@@ -1687,6 +1825,12 @@
 /**************************************************************************************/
 /***************          Some unsorted "chain" defines            ********************/
 /**************************************************************************************/
+
+#if (defined (FIXEDWING))&& (defined(GPS) || defined(I2C_GPS))
+  #define NAV_CONTROLS_HEADING       true
+  #define NAV_TAIL_FIRST             false
+  #define NAV_SET_TAKEOFF_HEADING    false
+#endif
 
 #if defined (AIRPLANE) || defined(HELICOPTER)|| defined(SINGLECOPTER)|| defined(DUALCOPTER) && defined(PROMINI) 
   #if defined(D12_POWER)

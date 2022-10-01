@@ -120,10 +120,10 @@ extern int16_t lookupThrottleRC[11];
   // **********************
   // GPS common variables
   // **********************
-  extern int16_t  GPS_angle[2];                  // the angles that must be applied for GPS correction
+  extern int16_t  GPS_angle[3];                      // the angles that must be applied for GPS correction
   extern int32_t  GPS_coord[2];
-  extern int32_t  GPS_home[2];
-  extern int32_t  GPS_hold[2];
+  extern int32_t  GPS_home[3];
+  extern int32_t  GPS_hold[3];
   extern uint8_t  GPS_numSat;
   extern uint16_t GPS_distanceToHome;            // distance to home  - unit: meter
   extern int16_t  GPS_directionToHome;           // direction to home - unit: degree
@@ -135,8 +135,14 @@ extern int16_t lookupThrottleRC[11];
   extern uint8_t  GPS_Enable;
   extern uint8_t  GPS_Frame;                     // indicates if a frame is ready to be computed
 
+// FixedWing Gps 
+  extern int16_t  GPS_FwTarget;                             // Gps correction for Fixed wing
+  extern int16_t  GPS_AltErr;                              // Gps correction for Fixed wing
+  extern int16_t  NAV_Thro;
+  
   #define LAT  0
   #define LON  1
+  #define ALT  2
 
   /////////////////////////////////////////////////////////////////////////////////////////////////////////////
   // Serial GPS only variables
